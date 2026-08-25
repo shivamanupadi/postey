@@ -76,7 +76,13 @@ function Overview(): ReactElement {
             ))}
           </div>
         ) : (
-          <Empty>No emails sent yet. Create an API key and send your first one.</Empty>
+          <Empty>
+            No emails sent yet.{' '}
+            <Link to="/keys" className="text-accent underline">
+              Create an API key
+            </Link>{' '}
+            - the Keys page has copy-paste send snippets.
+          </Empty>
         )}
       </Card>
     </div>

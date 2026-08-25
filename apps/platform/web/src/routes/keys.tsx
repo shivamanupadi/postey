@@ -4,6 +4,120 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, fmtTime } from '@/lib/api';
 import { Button, Card, Empty, ErrorNote, Field, Input, Table } from '@/lib/ui';
 
+/* ── send snippets ──────────────────────────────────────────────── */
+
+type Lang = 'curl' | 'node' | 'python' | 'mcp';
+
+function buildSnippet(lang: Lang, sendUrl: string, key: string, from: string): string {
+  const url = `${sendUrl}/api/emails`;
+  switch (lang) {
+    case 'curl':
+      return `curl -X POST ${url} \\
+  -H "Authorization: Bearer ${key}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "from": "Acme <${from}>",
+    "to": ["user@example.com"],
+    "subject": "Hello from Postey",
+    "html": "<h1>It works!</h1>"
+  }'`;
+    case 'node':
+      return `const res = await fetch("${url}", {
+  method: "POST",
+  headers: {
+    Authorization: "Bearer ${key}",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    from: "Acme <${from}>",
+    to: ["user@example.com"],
+    subject: "Hello from Postey",
+    html: "<h1>It works!</h1>",
+  }),
+});
+const { id } = await res.json();`;
+    case 'python':
+      return `import requests
+
+res = requests.post(
+    "${url}",
+    headers={
+        "Authorization": "Bearer ${key}",
+        "User-Agent": "my-app/1.0",  # bot protection dislikes default UAs
+    },
+    json={
+        "from": "Acme <${from}>",
+        "to": ["user@example.com"],
+        "subject": "Hello from Postey",
+        "html": "<h1>It works!</h1>",
+    },
+)
+print(res.json()["id"])`;
+    case 'mcp':
+      return `# Give a coding agent its own email tools:
+claude mcp add --transport http postey ${sendUrl}/api/mcp \\
+  --header "Authorization: Bearer ${key}"`;
+  }
+}
+
+function SendSnippets({ apiKey }: { apiKey: string | null }): ReactElement {
+  const [lang, setLang] = useState<Lang>('curl');
+  const [copied, setCopied] = useState(false);
+  const config = useQuery({
+    queryKey: ['instance-config'],
+    queryFn: async () => {
+      const res = await fetch('/api/config');
+      return (await res.json()) as { sendUrl: string | null; sendingDomain: string | null };
+    },
+    staleTime: Infinity,
+  });
+  const domains = useQuery({
+    queryKey: ['domains'],
+    queryFn: () => api.get<{ id: string; name: string; status: string }[]>('/api/domains'),
+  });
+
+  const sendUrl = config.data?.sendUrl ?? 'https://<your-send-worker>';
+  const domain =
+    domains.data?.find(d => d.status === 'active')?.name ??
+    config.data?.sendingDomain ??
+    'your-domain.com';
+  const snippet = buildSnippet(lang, sendUrl, apiKey ?? '<YOUR_API_KEY>', `hello@${domain}`);
+
+  const copy = (): void => {
+    void navigator.clipboard.writeText(snippet).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  return (
+    <div className="mt-4">
+      <div className="flex items-center justify-between">
+        <div className="flex gap-1 rounded-full border border-line p-0.5 text-xs font-semibold">
+          {(['curl', 'node', 'python', 'mcp'] as const).map(l => (
+            <button
+              key={l}
+              onClick={() => setLang(l)}
+              className={`rounded-full px-3 py-1 ${lang === l ? 'bg-ink text-cream' : 'text-ink-soft'}`}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={copy}
+          className="rounded-full border border-line px-3 py-1 text-xs font-semibold text-ink-soft hover:border-ink-soft"
+        >
+          {copied ? 'Copied ✓' : 'Copy'}
+        </button>
+      </div>
+      <pre className="mt-3 overflow-x-auto rounded-xl bg-ink-deep p-4 font-mono text-xs leading-relaxed text-cream/90">
+        {snippet}
+      </pre>
+    </div>
+  );
+}
+
 export const Route = createFileRoute('/keys')({
   component: KeysPage,
 });
@@ -90,6 +204,10 @@ function KeysPage(): ReactElement {
               Copy this key now - it is shown exactly once:
             </p>
             <code className="mt-1 block select-all break-all font-mono text-sm">{minted}</code>
+            <p className="mt-3 text-xs font-semibold text-accent-deep">
+              Send your first email with it:
+            </p>
+            <SendSnippets apiKey={minted} />
           </div>
         )}
         <ErrorNote error={create.error ?? revoke.error} />
@@ -117,6 +235,14 @@ function KeysPage(): ReactElement {
       ) : (
         <Empty>{keys.isLoading ? 'Loading…' : 'No keys yet.'}</Empty>
       )}
+
+      <Card title="How to send">
+        <p className="text-sm text-ink-soft">
+          POST Resend-shaped payloads to your send API with any key. Supports templates
+          (template_id + variables), attachments (base64), idempotency keys, and scheduling.
+        </p>
+        <SendSnippets apiKey={null} />
+      </Card>
     </div>
   );
 }
