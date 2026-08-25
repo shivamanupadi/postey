@@ -1,0 +1,10 @@
+node_modules
+dist
+.turbo
+.wrangler
+.wrangler-state
+*.tsbuildinfo
+.DS_Store
+.env
+.dev.vars
+.dev.vars.doppler

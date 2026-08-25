@@ -1,0 +1,17 @@
+# Postey inbound worker - Email Routing email() handler. Wire it up by
+# creating an Email Routing rule (or catch-all) on your domain that routes to
+# this worker. The wizard deploys it but deliberately does NOT touch your
+# zone's MX records: enabling Email Routing changes how ALL mail to the domain
+# flows, which must stay a deliberate, human decision.
+name = "postey-inbound-dev"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "postey-db-dev"
+database_id = "postey-db-local"
+migrations_dir = "../api/src/db/migrations"
+
+[vars]
+ENVIRONMENT = "development"

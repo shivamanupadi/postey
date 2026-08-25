@@ -1,0 +1,25 @@
+# Postey dashboard worker - session-authenticated API + the dashboard SPA
+# (ASSETS). In customer accounts this is provisioned by the deploy wizard;
+# this file exists for local dev and for building the release bundle.
+name = "postey-api-dev"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "postey-db-dev"
+database_id = "postey-db-local"
+migrations_dir = "src/db/migrations"
+
+[[r2_buckets]]
+binding = "BODIES"
+bucket_name = "postey-bodies-dev"
+
+[vars]
+ENVIRONMENT = "development"
+SEND_URL = "http://localhost:6010"
+
+# Production instances also carry (set by the wizard):
+#   ASSETS binding (dashboard SPA), POSTEY_VERSION, DEPLOY_INSTANCE_ID,
+#   SENDING_DOMAIN, and the CLAIM_TOKEN secret.

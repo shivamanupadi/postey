@@ -1,0 +1,17 @@
+# postey.app marketing site + deploy wizard UI - a static-assets-only worker.
+# Dynamic paths on this hostname will be claimed by the postey home-api worker
+# via zone routes (postey.app/api/*, /deploy/callback*) once it exists.
+name = "postey-site"
+compatibility_date = "2026-08-01"
+
+[assets]
+directory = "./dist"
+not_found_handling = "single-page-application"
+
+[[routes]]
+pattern = "postey.app"
+custom_domain = true
+
+[[routes]]
+pattern = "www.postey.app"
+custom_domain = true

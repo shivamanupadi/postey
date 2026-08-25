@@ -1,0 +1,35 @@
+# Postey send worker - the public, API-key-authenticated send API plus the
+# queue consumer that delivers through Cloudflare Email Service. In customer
+# accounts this is provisioned by the deploy wizard (names/ids injected); this
+# file exists for local dev and for building the release bundle.
+name = "postey-send-dev"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "postey-db-dev"
+database_id = "postey-db-local"
+migrations_dir = "../api/src/db/migrations"
+
+[[r2_buckets]]
+binding = "BODIES"
+bucket_name = "postey-bodies-dev"
+
+[[queues.producers]]
+binding = "SEND_QUEUE"
+queue = "postey-send-dev"
+
+[[queues.consumers]]
+queue = "postey-send-dev"
+max_batch_size = 10
+max_retries = 5
+max_batch_timeout = 2
+
+# Local dev simulates sends unless remote = true is added.
+[[send_email]]
+name = "EMAIL"
+
+[vars]
+ENVIRONMENT = "development"

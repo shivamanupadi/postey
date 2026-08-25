@@ -1,0 +1,20 @@
+{
+  "name": "@postey/platform-inbound",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 6015 --persist-to ../../../.wrangler-state",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "type-check": "tsc --noEmit",
+    "clean": "rimraf node_modules .turbo dist .wrangler"
+  },
+  "dependencies": {
+    "@postey/shared": "*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
+    "typescript": "~5.9.3",
+    "wrangler": "^4.107.1"
+  }
+}

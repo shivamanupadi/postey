@@ -1,0 +1,88 @@
+# postey.app home worker - deploy-wizard backend ONLY. Physically separate
+# from the platform api that ships to customer instances: different worker,
+# different D1 (registry only, never tokens). The marketing site + wizard UI
+# is the postey-site static worker; this one claims postey.app/api/* via zone
+# routes once the domain exists.
+name = "postey-home-api-dev"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "postey-home-db-dev"
+database_id = "postey-home-db-local"
+migrations_dir = "src/db/migrations"
+
+# Release artifacts consumed by the /deploy web installer. Populate locally
+# with `node installer/build-release.mjs && node installer/upload-release.mjs --local`.
+[[r2_buckets]]
+binding = "RELEASES"
+bucket_name = "postey-releases"
+
+[vars]
+ENVIRONMENT = "development"
+
+# --- Production: wrangler deploy --env production ---
+
+[env.production]
+name = "postey-home-api"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "postey-home-db"
+database_id = "86d99c41-1c7d-446d-ab4a-ee4cadcb43f2"
+migrations_dir = "src/db/migrations"
+
+[[env.production.r2_buckets]]
+binding = "RELEASES"
+bucket_name = "postey-releases"
+
+# Abuse guards for the public, unauthenticated wizard API, keyed by client IP.
+#   2002 - token-verification endpoints (accounts/zones): these relay
+#          caller-supplied credentials to Cloudflare, so without a cap
+#          postey.app would be a free credential-validation oracle.
+#   2003 - session creation (POST /instance), which writes a registry row.
+[[env.production.unsafe.bindings]]
+name = "VERIFY_LIMIT"
+type = "ratelimit"
+namespace_id = "2002"
+simple = { limit = 30, period = 60 }
+
+[[env.production.unsafe.bindings]]
+name = "SESSION_LIMIT"
+type = "ratelimit"
+namespace_id = "2003"
+simple = { limit = 10, period = 60 }
+
+# Nightly sweep of abandoned ('new') wizard sessions.
+[env.production.triggers]
+crons = ["17 3 * * *"]
+
+[env.production.vars]
+ENVIRONMENT = "production"
+
+# postey.app is owned by the postey-site worker (marketing + wizard UI); this
+# worker takes only the wizard's backend paths there.
+[[env.production.routes]]
+pattern = "postey.app/api/*"
+zone_name = "postey.app"
+
+# OAuth redirect URI for the "Postey Deploy" OAuth client (once registered).
+[[env.production.routes]]
+pattern = "postey.app/deploy/callback*"
+zone_name = "postey.app"
+
+# www serves the same SPA; its API calls must reach this worker too (the
+# OAuth redirect is canonicalized to the apex in code).
+[[env.production.routes]]
+pattern = "www.postey.app/api/*"
+zone_name = "postey.app"
+
+[[env.production.routes]]
+pattern = "www.postey.app/deploy/callback*"
+zone_name = "postey.app"
+
+# Secrets (Doppler project postey-home, config prd - synced via
+# `bun run secrets:prod:sync`):
+#   CF_OAUTH_CLIENT_ID, CF_OAUTH_CLIENT_SECRET
