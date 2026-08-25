@@ -8,7 +8,13 @@
  * out, it never fails. Re-enqueues use a fresh queue message (not retry()) so
  * quota waits never consume the transient-error retry budget.
  */
-import { newId, signWebhook, type EventType, type WebhookEvent } from '@postey/shared';
+import {
+  newId,
+  signWebhook,
+  type EventType,
+  type StoredAttachment,
+  type WebhookEvent,
+} from '@postey/shared';
 import type { Bindings, QueueJob } from './types';
 
 interface MessageRow {
@@ -120,8 +126,36 @@ async function deliverOne(
 
   const body = row.body_r2_key ? await env.BODIES.get(row.body_r2_key) : null;
   const content = body
-    ? ((await body.json()) as { html: string | null; text: string | null })
+    ? ((await body.json()) as {
+        html: string | null;
+        text: string | null;
+        attachments?: StoredAttachment[];
+      })
     : { html: null, text: null };
+
+  /* Load attachment binaries from R2. A missing object is a hard failure -
+   * silently sending without a promised attachment would be worse. */
+  let attachments:
+    | { content: ArrayBuffer; filename: string; type: string; disposition: string; contentId?: string }[]
+    | undefined;
+  if (content.attachments?.length) {
+    attachments = [];
+    for (const meta of content.attachments) {
+      const obj = await env.BODIES.get(meta.key);
+      if (!obj) {
+        await setStatus(env, row, 'failed', 'E_ATTACHMENT_MISSING', `${meta.filename} not in storage`);
+        msg.ack();
+        return;
+      }
+      attachments.push({
+        content: await obj.arrayBuffer(),
+        filename: meta.filename,
+        type: meta.type,
+        disposition: meta.disposition,
+        ...(meta.content_id ? { contentId: meta.content_id } : {}),
+      });
+    }
+  }
 
   await env.DB.prepare("UPDATE messages SET status = 'sending', attempts = attempts + 1 WHERE id = ?")
     .bind(messageId)
@@ -141,6 +175,7 @@ async function deliverOne(
       ...(content.html ? { html: content.html } : {}),
       ...(content.text ? { text: content.text } : {}),
       ...(row.headers_json ? { headers: JSON.parse(row.headers_json) } : {}),
+      ...(attachments?.length ? { attachments } : {}),
     });
 
     const now = Date.now();

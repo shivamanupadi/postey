@@ -28,8 +28,15 @@ interface MessageDetail {
   completed_at: number | null;
   recipients: { address: string; kind: string; status: string; error: string | null }[];
   events: { event: string; meta_json: string | null; created_at: number }[];
-  body: { html: string | null; text: string | null } | null;
+  body: {
+    html: string | null;
+    text: string | null;
+    attachments?: { filename: string; type: string; size: number; disposition: string }[];
+  } | null;
 }
+
+const fmtSize = (bytes: number): string =>
+  bytes >= 1_048_576 ? `${(bytes / 1_048_576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
 function EmailDetail(): ReactElement {
   const { id } = Route.useParams();
@@ -114,6 +121,28 @@ function EmailDetail(): ReactElement {
           ))}
         </Table>
       </Card>
+
+      {m.body?.attachments && m.body.attachments.length > 0 && (
+        <Card title="Attachments">
+          <ul className="space-y-2 text-sm">
+            {m.body.attachments.map((a, i) => (
+              <li key={i} className="flex items-center gap-3">
+                <a
+                  href={`/api/messages/${m.id}/attachments/${i}`}
+                  className="font-medium text-accent underline"
+                  download={a.filename}
+                >
+                  {a.filename}
+                </a>
+                <span className="font-mono text-xs text-ink-soft">
+                  {a.type} · {fmtSize(a.size)}
+                  {a.disposition === 'inline' ? ' · inline' : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       {m.body && (
         <Card

@@ -100,4 +100,33 @@ app.get('/messages/:id', async c => {
   });
 });
 
+/* Stream one stored attachment. The index addresses the manifest in the body
+ * JSON, which supplies filename and content type. */
+app.get('/messages/:id/attachments/:idx', async c => {
+  const id = c.req.param('id');
+  const idx = Number(c.req.param('idx'));
+  if (!Number.isInteger(idx) || idx < 0 || idx > 9) return c.json({ error: 'Not found' }, 404);
+  const message = await c.env.DB.prepare('SELECT body_r2_key FROM messages WHERE id = ?')
+    .bind(id)
+    .first<{ body_r2_key: string | null }>();
+  if (!message?.body_r2_key) return c.json({ error: 'Not found' }, 404);
+  const bodyObj = await c.env.BODIES.get(message.body_r2_key);
+  if (!bodyObj) return c.json({ error: 'Not found' }, 404);
+  const manifest = (
+    (await bodyObj.json()) as {
+      attachments?: { key: string; filename: string; type: string }[];
+    }
+  ).attachments?.[idx];
+  if (!manifest) return c.json({ error: 'Not found' }, 404);
+  const file = await c.env.BODIES.get(manifest.key);
+  if (!file) return c.json({ error: 'Not found' }, 404);
+  return new Response(file.body, {
+    headers: {
+      'Content-Type': manifest.type || 'application/octet-stream',
+      'Content-Disposition': `attachment; filename="${manifest.filename.replaceAll('"', '')}"`,
+      'Cache-Control': 'private, max-age=300',
+    },
+  });
+});
+
 export const messagesRoute = app;

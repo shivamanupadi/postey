@@ -46,6 +46,20 @@ export const sendEmailSchema = z.object({
     .array(z.object({ name: z.string().max(64), value: z.string().max(256) }))
     .max(10)
     .optional(),
+  /** Resend-compatible: base64 content. Total decoded size capped at 4 MiB
+   *  (Cloudflare's 5 MiB message limit, minus room for headers + body). */
+  attachments: z
+    .array(
+      z.object({
+        filename: z.string().min(1).max(255),
+        content: z.string().min(1).max(5_600_000),
+        content_type: z.string().max(200).optional(),
+        disposition: z.enum(['attachment', 'inline']).optional(),
+        content_id: z.string().max(200).optional(),
+      })
+    )
+    .max(10)
+    .optional(),
   idempotency_key: z.string().max(256).optional(),
 });
 
@@ -72,6 +86,23 @@ export function parseAddress(input: z.infer<typeof addressInput>): ParsedAddress
 export function toList(value: string | string[] | undefined): string[] {
   if (!value) return [];
   return (Array.isArray(value) ? value : [value]).map(v => v.toLowerCase());
+}
+
+export function base64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64.replace(/\s+/g, ''));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/** Attachment manifest entry stored in the body JSON; binary lives in R2. */
+export interface StoredAttachment {
+  key: string;
+  filename: string;
+  type: string;
+  disposition: 'attachment' | 'inline';
+  content_id: string | null;
+  size: number;
 }
 
 /** Minimal {{var}} template rendering - no logic, just substitution. */

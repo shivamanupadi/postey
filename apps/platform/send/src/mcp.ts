@@ -43,6 +43,21 @@ const TOOLS: ToolDef[] = [
         reply_to: str('Optional Reply-To address'),
         template_id: str('Optional template id or slug - template supplies subject/body'),
         variables: { type: 'object', description: 'Values for {{placeholders}} in the template' },
+        attachments: {
+          type: 'array',
+          description: 'File attachments (max 10, 4 MiB total decoded)',
+          items: {
+            type: 'object',
+            properties: {
+              filename: str('File name shown to the recipient'),
+              content: str('File content, base64-encoded'),
+              content_type: str('MIME type (default application/octet-stream)'),
+              disposition: { type: 'string', enum: ['attachment', 'inline'] },
+              content_id: str('For inline images: reference in HTML as cid:<content_id>'),
+            },
+            required: ['filename', 'content'],
+          },
+        },
         idempotency_key: str('Optional: retries with the same key send exactly once'),
       },
       required: ['from', 'to'],

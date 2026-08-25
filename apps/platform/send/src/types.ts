@@ -11,6 +11,14 @@ export interface EmailBinding {
     html?: string;
     text?: string;
     headers?: Record<string, string>;
+    attachments?: {
+      /** Strings are RAW content (not base64); binary goes as ArrayBuffer. */
+      content: string | ArrayBuffer;
+      filename: string;
+      type?: string;
+      disposition?: string;
+      contentId?: string;
+    }[];
   }): Promise<{ messageId?: string }>;
 }
 

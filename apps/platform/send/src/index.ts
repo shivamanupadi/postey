@@ -9,6 +9,7 @@
  */
 import { Hono, type Context } from 'hono';
 import {
+  base64ToBytes,
   newId,
   parseAddress,
   renderTemplate,
@@ -16,6 +17,7 @@ import {
   sha256Hex,
   toList,
   type SendEmailInput,
+  type StoredAttachment,
 } from '@postey/shared';
 import type { Bindings, QueueJob } from './types';
 import { deliverBatch } from './deliver';
@@ -168,7 +170,45 @@ async function handleSend(c: AppCtx): Promise<Response> {
   const status = live.length === 0 ? 'suppressed' : scheduledAt ? 'scheduled' : 'queued';
   const bodyKey = `bodies/${id}.json`;
 
-  await c.env.BODIES.put(bodyKey, JSON.stringify({ html: html ?? null, text: text ?? null }));
+  /* Attachments: decode base64, store binary under the message's R2 prefix,
+   * record a manifest in the body JSON. Total decoded size ≤ 4 MiB. */
+  const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024;
+  const attachments: StoredAttachment[] = [];
+  if (input.attachments?.length) {
+    let total = 0;
+    for (let i = 0; i < input.attachments.length; i++) {
+      const a = input.attachments[i];
+      let bytes: Uint8Array;
+      try {
+        bytes = base64ToBytes(a.content);
+      } catch {
+        return c.json({ error: `attachments[${i}].content is not valid base64` }, 422);
+      }
+      total += bytes.length;
+      if (total > MAX_ATTACHMENT_BYTES) {
+        return c.json({ error: 'Attachments exceed the 4 MiB total limit' }, 422);
+      }
+      const key = `bodies/${id}/att/${i}`;
+      await c.env.BODIES.put(key, bytes as unknown as ArrayBuffer);
+      attachments.push({
+        key,
+        filename: a.filename,
+        type: a.content_type ?? 'application/octet-stream',
+        disposition: a.disposition ?? 'attachment',
+        content_id: a.content_id ?? null,
+        size: bytes.length,
+      });
+    }
+  }
+
+  await c.env.BODIES.put(
+    bodyKey,
+    JSON.stringify({
+      html: html ?? null,
+      text: text ?? null,
+      ...(attachments.length ? { attachments } : {}),
+    })
+  );
 
   const statements = [
     c.env.DB.prepare(
