@@ -21,10 +21,19 @@ interface KeyRow {
 function KeysPage(): ReactElement {
   const qc = useQueryClient();
   const keys = useQuery({ queryKey: ['keys'], queryFn: () => api.get<KeyRow[]>('/api/keys') });
+  const domains = useQuery({
+    queryKey: ['domains'],
+    queryFn: () => api.get<{ id: string; name: string }[]>('/api/domains'),
+  });
   const [name, setName] = useState('');
+  const [domainId, setDomainId] = useState('');
   const [minted, setMinted] = useState<string | null>(null);
   const create = useMutation({
-    mutationFn: () => api.post<{ id: string; key: string }>('/api/keys', { name }),
+    mutationFn: () =>
+      api.post<{ id: string; key: string }>('/api/keys', {
+        name,
+        ...(domainId ? { domain_id: domainId } : {}),
+      }),
     onSuccess: data => {
       setMinted(data.key);
       setName('');
@@ -51,10 +60,30 @@ function KeysPage(): ReactElement {
               <Input placeholder="production backend" value={name} onChange={e => setName(e.target.value)} />
             </Field>
           </div>
+          <div className="w-64">
+            <Field label="Scope">
+              <select
+                className="w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-sm"
+                value={domainId}
+                onChange={e => setDomainId(e.target.value)}
+              >
+                <option value="">All domains</option>
+                {domains.data?.map(d => (
+                  <option key={d.id} value={d.id}>
+                    {d.name} only
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
           <Button type="submit" disabled={create.isPending}>
             Create
           </Button>
         </form>
+        <p className="mt-3 text-xs text-ink-soft">
+          A scoped key can only send from its domain, and only sees that domain's emails,
+          templates, and suppressions. Prefer scoped keys for anything embedded in an app.
+        </p>
         {minted && (
           <div className="mt-4 rounded-xl border border-accent/40 bg-accent-soft px-4 py-3">
             <p className="text-xs font-semibold text-accent-deep">

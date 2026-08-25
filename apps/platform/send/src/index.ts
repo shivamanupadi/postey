@@ -96,13 +96,14 @@ async function handleSend(c: AppCtx): Promise<Response> {
     return c.json({ error: 'This API key cannot send from that domain' }, 403);
   }
 
-  /* Template merge */
+  /* Template merge - a template is usable if shared (no domain) or owned by
+   * the message's sending domain. */
   let { subject, html, text } = input;
   if (input.template_id) {
     const tpl = await c.env.DB.prepare(
-      'SELECT subject, html, text FROM templates WHERE id = ? OR slug = ?'
+      'SELECT subject, html, text FROM templates WHERE (id = ? OR slug = ?) AND (domain_id IS NULL OR domain_id = ?)'
     )
-      .bind(input.template_id, input.template_id)
+      .bind(input.template_id, input.template_id, domain.id)
       .first<{ subject: string; html: string | null; text: string | null }>();
     if (!tpl) return c.json({ error: `Template ${input.template_id} not found` }, 422);
     const vars = input.variables ?? {};
@@ -339,13 +340,22 @@ app.get('/api/emails/:id', getEmail);
 app.get('/emails/:id', getEmail);
 
 app.get('/api/templates', async c => {
-  const rows = await c.env.DB.prepare(
-    'SELECT id, slug, name, subject, variables_json FROM templates ORDER BY updated_at DESC'
-  ).all();
+  const key = c.get('apiKey');
+  // A domain-scoped key sees shared templates plus its own domain's.
+  const rows = key.domain_id
+    ? await c.env.DB.prepare(
+        'SELECT id, slug, name, subject, variables_json, domain_id FROM templates WHERE domain_id IS NULL OR domain_id = ? ORDER BY updated_at DESC'
+      )
+        .bind(key.domain_id)
+        .all()
+    : await c.env.DB.prepare(
+        'SELECT id, slug, name, subject, variables_json, domain_id FROM templates ORDER BY updated_at DESC'
+      ).all();
   return c.json({ data: rows.results });
 });
 
 app.post('/api/templates', async c => {
+  const key = c.get('apiKey');
   const body = (await c.req.json().catch(() => null)) as {
     slug?: string;
     name?: string;
@@ -362,12 +372,20 @@ app.post('/api/templates', async c => {
   if ((body.html?.length ?? 0) > 500_000 || (body.text?.length ?? 0) > 500_000) {
     return c.json({ error: 'Template body too large' }, 422);
   }
+  // A scoped key creates templates owned by its domain; an unscoped key
+  // creates shared ones. Slugs are global - replacing requires ownership.
+  const scope = key.domain_id ?? null;
+  const existing = await c.env.DB.prepare('SELECT domain_id FROM templates WHERE slug = ?')
+    .bind(body.slug)
+    .first<{ domain_id: string | null }>();
+  if (existing && existing.domain_id !== scope) {
+    return c.json({ error: `Slug "${body.slug}" is taken by a different domain scope` }, 409);
+  }
   const now = Date.now();
   const id = newId('tpl');
-  // Same-slug upsert: agents iterate on templates; version bumps on replace.
   await c.env.DB.prepare(
-    `INSERT INTO templates (id, slug, name, subject, html, text, variables_json, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO templates (id, slug, name, subject, html, text, variables_json, domain_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(slug) DO UPDATE SET name = excluded.name, subject = excluded.subject,
        html = excluded.html, text = excluded.text, variables_json = excluded.variables_json,
        version = version + 1, updated_at = excluded.updated_at`
@@ -380,6 +398,7 @@ app.post('/api/templates', async c => {
       body.html ?? null,
       body.text ?? null,
       body.variables ? JSON.stringify(body.variables.slice(0, 50)) : null,
+      scope,
       now,
       now
     )
@@ -403,12 +422,20 @@ app.post('/api/suppressions', async c => {
 });
 
 app.get('/api/suppressions', async c => {
+  const key = c.get('apiKey');
   const q = c.req.query('q')?.toLowerCase() ?? '';
-  const rows = await c.env.DB.prepare(
-    'SELECT address, reason, created_at FROM suppressions WHERE address LIKE ? ORDER BY created_at DESC LIMIT 100'
-  )
-    .bind(`%${q}%`)
-    .all();
+  // A domain-scoped key sees instance-wide entries plus its own domain's.
+  const rows = key.domain_id
+    ? await c.env.DB.prepare(
+        'SELECT address, reason, created_at FROM suppressions WHERE address LIKE ? AND (domain_id IS NULL OR domain_id = ?) ORDER BY created_at DESC LIMIT 100'
+      )
+        .bind(`%${q}%`, key.domain_id)
+        .all()
+    : await c.env.DB.prepare(
+        'SELECT address, reason, created_at FROM suppressions WHERE address LIKE ? ORDER BY created_at DESC LIMIT 100'
+      )
+        .bind(`%${q}%`)
+        .all();
   return c.json({ data: rows.results });
 });
 

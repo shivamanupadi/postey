@@ -15,11 +15,13 @@ interface TemplateRow {
   subject: string;
   html: string | null;
   text: string | null;
+  domain_id: string | null;
+  domain_name: string | null;
   version: number;
   updated_at: number;
 }
 
-const empty = { slug: '', name: '', subject: '', html: '', text: '' };
+const empty = { slug: '', name: '', subject: '', html: '', text: '', domain_id: '' };
 
 function TemplatesPage(): ReactElement {
   const qc = useQueryClient();
@@ -32,9 +34,18 @@ function TemplatesPage(): ReactElement {
   const set = (k: keyof typeof empty) => (e: { target: { value: string } }) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
 
+  const domains = useQuery({
+    queryKey: ['domains'],
+    queryFn: () => api.get<{ id: string; name: string }[]>('/api/domains'),
+  });
   const save = useMutation({
     mutationFn: () => {
-      const body = { ...form, html: form.html || null, text: form.text || null };
+      const body = {
+        ...form,
+        html: form.html || null,
+        text: form.text || null,
+        domain_id: form.domain_id || null,
+      };
       return editing === 'new'
         ? api.post('/api/templates', body)
         : api.put(`/api/templates/${editing}`, body);
@@ -83,6 +94,20 @@ function TemplatesPage(): ReactElement {
             <Field label="Subject ({{variables}} allowed)">
               <Input required placeholder="Welcome to {{product}}!" value={form.subject} onChange={set('subject')} />
             </Field>
+            <Field label="Scope">
+              <select
+                className="w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-sm"
+                value={form.domain_id}
+                onChange={set('domain_id')}
+              >
+                <option value="">Shared (all domains)</option>
+                {domains.data?.map(d => (
+                  <option key={d.id} value={d.id}>
+                    {d.name} only
+                  </option>
+                ))}
+              </select>
+            </Field>
             <Field label="HTML">
               <Textarea rows={8} value={form.html} onChange={set('html')} placeholder="<h1>Hi {{name}}</h1>" />
             </Field>
@@ -103,7 +128,7 @@ function TemplatesPage(): ReactElement {
       )}
 
       {templates.data?.length ? (
-        <Table head={['Template', 'Subject', 'Version', 'Updated', '']}>
+        <Table head={['Template', 'Subject', 'Scope', 'Version', 'Updated', '']}>
           {templates.data.map(t => (
             <tr key={t.id}>
               <td className="px-4 py-3">
@@ -111,6 +136,7 @@ function TemplatesPage(): ReactElement {
                 <p className="font-mono text-xs text-ink-soft">{t.slug}</p>
               </td>
               <td className="px-4 py-3 text-ink-soft">{t.subject}</td>
+              <td className="px-4 py-3 text-xs text-ink-soft">{t.domain_name ?? 'shared'}</td>
               <td className="px-4 py-3 font-mono text-xs">v{t.version}</td>
               <td className="px-4 py-3 text-xs text-ink-soft">{fmtTime(t.updated_at)}</td>
               <td className="px-4 py-3 text-right">
@@ -125,6 +151,7 @@ function TemplatesPage(): ReactElement {
                         subject: t.subject,
                         html: t.html ?? '',
                         text: t.text ?? '',
+                        domain_id: t.domain_id ?? '',
                       });
                     }}
                   >

@@ -118,6 +118,12 @@ app.post(
   ),
   async c => {
     const { name, domain_id } = c.req.valid('json');
+    if (domain_id) {
+      const domain = await c.env.DB.prepare('SELECT id FROM domains WHERE id = ?')
+        .bind(domain_id)
+        .first();
+      if (!domain) return c.json({ error: 'Unknown domain for key scope' }, 422);
+    }
     const plaintext = `pk_live_${randomHex(20)}`;
     const id = newId('key');
     await c.env.DB.prepare(
@@ -149,10 +155,15 @@ const templateSchema = z.object({
   html: z.string().max(500_000).nullable().optional(),
   text: z.string().max(500_000).nullable().optional(),
   variables: z.array(z.string().max(64)).max(50).optional(),
+  /** NULL/absent = shared across all domains. */
+  domain_id: z.string().max(64).nullable().optional(),
 });
 
 app.get('/templates', async c => {
-  const rows = await c.env.DB.prepare('SELECT * FROM templates ORDER BY updated_at DESC').all();
+  const rows = await c.env.DB.prepare(
+    `SELECT t.*, d.name AS domain_name FROM templates t
+     LEFT JOIN domains d ON d.id = t.domain_id ORDER BY t.updated_at DESC`
+  ).all();
   return c.json({ data: rows.results });
 });
 
@@ -162,10 +173,10 @@ app.post('/templates', zValidator('json', templateSchema), async c => {
   const now = Date.now();
   try {
     await c.env.DB.prepare(
-      'INSERT INTO templates (id, slug, name, subject, html, text, variables_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO templates (id, slug, name, subject, html, text, variables_json, domain_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     )
       .bind(id, t.slug, t.name, t.subject, t.html ?? null, t.text ?? null,
-        t.variables ? JSON.stringify(t.variables) : null, now, now)
+        t.variables ? JSON.stringify(t.variables) : null, t.domain_id ?? null, now, now)
       .run();
   } catch (err) {
     if (err instanceof Error && /UNIQUE/i.test(err.message)) {
@@ -187,6 +198,7 @@ app.put('/templates/:id', zValidator('json', templateSchema.partial()), async c 
     html: t.html,
     text: t.text,
     variables_json: t.variables ? JSON.stringify(t.variables) : undefined,
+    domain_id: t.domain_id,
   })) {
     if (val !== undefined) {
       sets.push(`${col} = ?`);
