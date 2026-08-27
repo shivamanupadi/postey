@@ -315,11 +315,12 @@ const EMAIL_EVENTS = [
 
 /**
  * Subscribe the events queue to Email Sending lifecycle events for the
- * instance's sending domain. The subscriptions API shipped with the July 2026
- * Queues event-subscriptions release but is not yet in the public OpenAPI
- * spec, so creation is best-effort across the known shapes; when none land,
- * the step still succeeds and the wizard shows the two-click dashboard
- * fallback (the consumer works identically either way).
+ * instance's sending domain. Body shape verified against wrangler 4.125's
+ * implementation of `queues subscription create --source email.sending`:
+ * POST /accounts/{id}/event_subscriptions/subscriptions with
+ * source { type, zone_id, domain } and destination { type, queue_id }.
+ * Failure degrades gracefully - the consumer works once the subscription is
+ * added by hand, and the wizard says exactly how.
  */
 async function ensureEventSubscription(
   ctx: EngineCtx,
@@ -337,43 +338,28 @@ async function ensureEventSubscription(
     }[];
     if (list.some(s => s.name === name)) return;
 
-    const bodies = [
-      {
+    try {
+      await cf('POST', base, {
         name,
         enabled: true,
-        source: { type: 'email.sending', domain },
+        source: { type: 'email.sending', zone_id: ctx.sendingDomain.zoneId, domain },
         destination: { type: 'queues.queue', queue_id: eventsQueueId },
         events: EMAIL_EVENTS,
-      },
-      {
-        name,
-        enabled: true,
-        source: { service: 'email.sending', domain },
-        destination: { queue_id: eventsQueueId },
-        events: EMAIL_EVENTS,
-      },
-    ];
-    for (const body of bodies) {
-      try {
-        await cf('POST', base, body);
-        return;
-      } catch {
-        /* try the next shape */
-      }
+      });
+    } catch (err) {
+      // Degrade gracefully with instructions. Delivery still works; statuses
+      // simply stay at 'sent' until the subscription is added by hand.
+      await ctx.emit({
+        stepId: 'event-subscription',
+        label: 'Subscribe to delivery events',
+        status: 'retry',
+        detail:
+          `Could not create the event subscription automatically (${err instanceof Error ? err.message.slice(0, 80) : 'error'}). One-time manual fix: npx wrangler queues subscription create ${ctx.instance}-events-queue --source email.sending --zone-id ${ctx.sendingDomain.zoneId} --domain ${domain} --events ${EMAIL_EVENTS.join(',')}`.slice(
+            0,
+            MAX_DETAIL
+          ),
+      });
     }
-    // All shapes refused - degrade gracefully with instructions. Delivery
-    // still works; statuses simply stay at 'sent' until the subscription is
-    // added by hand.
-    await ctx.emit({
-      stepId: 'event-subscription',
-      label: 'Subscribe to delivery events',
-      status: 'retry',
-      detail:
-        `Could not create the event subscription automatically. One-time manual step: Cloudflare dashboard → Queues → ${ctx.instance}-events-queue → Subscriptions → Subscribe to events → source "Email Sending", domain ${domain}, select all six message events → Subscribe.`.slice(
-          0,
-          MAX_DETAIL
-        ),
-    });
   });
 }
 
