@@ -178,20 +178,23 @@ async function deliverOne(
       ...(attachments?.length ? { attachments } : {}),
     });
 
+    // 'sent' = accepted by Cloudflare. The real outcome (delivered / bounced /
+    // complained) arrives asynchronously via the Email Sending event
+    // subscription and is applied in events.ts.
     const now = Date.now();
     await env.DB.batch([
       env.DB.prepare(
-        "UPDATE messages SET status = 'delivered', provider_message_id = ?, sent_at = ?, completed_at = ?, error_code = NULL, error_message = NULL WHERE id = ?"
+        "UPDATE messages SET status = 'sent', provider_message_id = ?, sent_at = ?, completed_at = ?, error_code = NULL, error_message = NULL WHERE id = ?"
       ).bind(response?.messageId ?? null, now, now, messageId),
       env.DB.prepare(
-        "UPDATE message_recipients SET status = 'delivered', updated_at = ? WHERE message_id = ? AND status = 'queued'"
+        "UPDATE message_recipients SET status = 'sent', updated_at = ? WHERE message_id = ? AND status = 'queued'"
       ).bind(now, messageId),
       env.DB.prepare(
         'INSERT INTO quota_usage (day, sent) VALUES (?, 1) ON CONFLICT(day) DO UPDATE SET sent = sent + 1'
       ).bind(day),
-      eventStmt(env, messageId, 'delivered', null),
+      eventStmt(env, messageId, 'sent', null),
     ]);
-    await dispatchWebhooks(env, ctx, row, 'delivered');
+    await dispatchWebhooks(env, ctx, row, 'sent');
     msg.ack();
   } catch (raw) {
     const err = raw as Error & { code?: string };
@@ -339,11 +342,12 @@ async function setStatus(
 
 /* ── outbound webhooks ───────────────────────────────────────────── */
 
-async function dispatchWebhooks(
+export async function dispatchWebhooks(
   env: Bindings,
   ctx: ExecutionContext,
-  row: MessageRow,
-  event: EventType
+  row: Pick<MessageRow, 'id' | 'subject' | 'from_email' | 'tags_json'>,
+  event: EventType,
+  extra?: { recipient?: string; detail?: string }
 ): Promise<void> {
   const hooks = (
     await env.DB.prepare('SELECT id, url, secret, events_json FROM webhooks WHERE enabled = 1').all<{
@@ -369,6 +373,8 @@ async function dispatchWebhooks(
       message_id: row.id,
       subject: row.subject,
       from: row.from_email,
+      ...(extra?.recipient ? { recipient: extra.recipient } : {}),
+      ...(extra?.detail ? { detail: extra.detail } : {}),
       ...(row.tags_json ? { tags: JSON.parse(row.tags_json) } : {}),
     },
   };

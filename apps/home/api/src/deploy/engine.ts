@@ -68,6 +68,8 @@ export function instanceNames(instance: string) {
     d1: `${instance}-db`,
     bucket: `${instance}-bodies`,
     queue: `${instance}-send-queue`,
+    /** "events" must appear in the name - the send worker routes on it. */
+    eventsQueue: `${instance}-events-queue`,
   };
 }
 
@@ -240,8 +242,14 @@ async function ensureBucket(ctx: EngineCtx, cf: Cf, bucket: string): Promise<voi
   });
 }
 
-async function ensureQueue(ctx: EngineCtx, cf: Cf, queueName: string): Promise<string> {
-  return step(ctx, 'queue', 'Create send queue', async () => {
+async function ensureQueue(
+  ctx: EngineCtx,
+  cf: Cf,
+  queueName: string,
+  stepId = 'queue',
+  label = 'Create send queue'
+): Promise<string> {
+  return step(ctx, stepId, label, async () => {
     try {
       let page = 1;
       for (;;) {
@@ -294,6 +302,79 @@ async function attachConsumer(
     },
     { tolerate: [100109, 10023] } // consumer-already-exists flavors
   );
+}
+
+const EMAIL_EVENTS = [
+  'message.delivered',
+  'message.deferred',
+  'message.bounced',
+  'message.failed',
+  'message.rejected',
+  'message.complained',
+];
+
+/**
+ * Subscribe the events queue to Email Sending lifecycle events for the
+ * instance's sending domain. The subscriptions API shipped with the July 2026
+ * Queues event-subscriptions release but is not yet in the public OpenAPI
+ * spec, so creation is best-effort across the known shapes; when none land,
+ * the step still succeeds and the wizard shows the two-click dashboard
+ * fallback (the consumer works identically either way).
+ */
+async function ensureEventSubscription(
+  ctx: EngineCtx,
+  cf: Cf,
+  eventsQueueId: string
+): Promise<void> {
+  await step(ctx, 'event-subscription', 'Subscribe to delivery events', async () => {
+    const domain = ctx.sendingDomain.hostname;
+    const name = `${ctx.instance}-email-events`;
+    const base = `/accounts/${ctx.accountId}/event_subscriptions/subscriptions`;
+
+    const existing = await cf('GET', `${base}?per_page=100`).catch(() => null);
+    const list = (Array.isArray(existing) ? existing : (existing?.subscriptions ?? [])) as {
+      name?: string;
+    }[];
+    if (list.some(s => s.name === name)) return;
+
+    const bodies = [
+      {
+        name,
+        enabled: true,
+        source: { type: 'email.sending', domain },
+        destination: { type: 'queues.queue', queue_id: eventsQueueId },
+        events: EMAIL_EVENTS,
+      },
+      {
+        name,
+        enabled: true,
+        source: { service: 'email.sending', domain },
+        destination: { queue_id: eventsQueueId },
+        events: EMAIL_EVENTS,
+      },
+    ];
+    for (const body of bodies) {
+      try {
+        await cf('POST', base, body);
+        return;
+      } catch {
+        /* try the next shape */
+      }
+    }
+    // All shapes refused - degrade gracefully with instructions. Delivery
+    // still works; statuses simply stay at 'sent' until the subscription is
+    // added by hand.
+    await ctx.emit({
+      stepId: 'event-subscription',
+      label: 'Subscribe to delivery events',
+      status: 'retry',
+      detail:
+        `Could not create the event subscription automatically. One-time manual step: Cloudflare dashboard → Queues → ${ctx.instance}-events-queue → Subscriptions → Subscribe to events → source "Email Sending", domain ${domain}, select all six message events → Subscribe.`.slice(
+          0,
+          MAX_DETAIL
+        ),
+    });
+  });
 }
 
 async function scriptExists(ctx: EngineCtx, cf: Cf, name: string): Promise<boolean> {
@@ -480,6 +561,13 @@ export async function provisionInstance(ctx: EngineCtx): Promise<ProvisionResult
   await seedSendingDomain(ctx, cf, d1Id);
   await ensureBucket(ctx, cf, N.bucket);
   const queueId = await ensureQueue(ctx, cf, N.queue);
+  const eventsQueueId = await ensureQueue(
+    ctx,
+    cf,
+    N.eventsQueue,
+    'events-queue',
+    'Create delivery-events queue'
+  );
 
   await step(ctx, 'send-worker', 'Deploy send worker', async () => {
     await uploadWorker(ctx, cf, N.sendWorker, await ctx.artifacts.sendWorker(), {
@@ -495,7 +583,10 @@ export async function provisionInstance(ctx: EngineCtx): Promise<ProvisionResult
       ],
     });
     await attachConsumer(ctx, cf, queueId, N.sendWorker);
+    await attachConsumer(ctx, cf, eventsQueueId, N.sendWorker);
   });
+
+  await ensureEventSubscription(ctx, cf, eventsQueueId);
 
   await step(ctx, 'inbound-worker', 'Deploy inbound worker', async () => {
     await uploadWorker(ctx, cf, N.inboundWorker, await ctx.artifacts.inboundWorker(), {
@@ -786,17 +877,19 @@ export async function destroyInstance(ctx: DestroyCtx): Promise<DestroyResult> {
     }
   });
 
-  await step(ctx, 'queue-teardown', 'Delete send queue', async () => {
+  await step(ctx, 'queue-teardown', 'Delete queues', async () => {
     const list = await cf('GET', `/accounts/${ctx.accountId}/queues?per_page=100`).catch(() => []);
     const rows = (Array.isArray(list) ? list : (list?.queues ?? [])) as {
       queue_id: string;
       queue_name: string;
     }[];
-    const hit = rows.find(q => q.queue_name === N.queue);
-    if (hit) {
-      await cf('DELETE', `/accounts/${ctx.accountId}/queues/${hit.queue_id}`, undefined, {
-        tolerate: gone,
-      }).catch(() => {});
+    for (const name of [N.queue, N.eventsQueue]) {
+      const hit = rows.find(q => q.queue_name === name);
+      if (hit) {
+        await cf('DELETE', `/accounts/${ctx.accountId}/queues/${hit.queue_id}`, undefined, {
+          tolerate: gone,
+        }).catch(() => {});
+      }
     }
   });
 

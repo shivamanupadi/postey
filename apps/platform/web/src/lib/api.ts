@@ -31,11 +31,15 @@ export const fmtTime = (ms: number | null | undefined): string =>
 
 export const STATUS_COLORS: Record<string, string> = {
   delivered: 'bg-ok/10 text-ok',
+  sent: 'bg-accent/10 text-accent-deep',
   queued: 'bg-accent-soft text-accent-deep',
   scheduled: 'bg-accent-soft text-accent-deep',
   sending: 'bg-accent-soft text-accent-deep',
+  deferred: 'bg-accent-soft text-accent-deep',
   partial: 'bg-accent-soft text-accent-deep',
   bounced: 'bg-bad/10 text-bad',
+  complained: 'bg-bad/10 text-bad',
+  rejected: 'bg-bad/10 text-bad',
   failed: 'bg-bad/10 text-bad',
   suppressed: 'bg-ink/10 text-ink-soft',
   canceled: 'bg-ink/10 text-ink-soft',

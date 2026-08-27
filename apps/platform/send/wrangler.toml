@@ -27,6 +27,14 @@ max_batch_size = 10
 max_retries = 5
 max_batch_timeout = 2
 
+# Email Sending lifecycle events land here via a Queues event subscription
+# (created by the deploy wizard; the queue name must contain "events").
+[[queues.consumers]]
+queue = "postey-events-dev"
+max_batch_size = 20
+max_retries = 3
+max_batch_timeout = 2
+
 # Local dev simulates sends unless remote = true is added.
 [[send_email]]
 name = "EMAIL"

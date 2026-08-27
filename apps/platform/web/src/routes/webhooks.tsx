@@ -17,7 +17,14 @@ interface WebhookRow {
   created_at: number;
 }
 
-const ALL_EVENTS = ['email.delivered', 'email.bounced', 'email.failed', 'email.suppressed'];
+const ALL_EVENTS = [
+  'email.sent',
+  'email.delivered',
+  'email.bounced',
+  'email.complained',
+  'email.failed',
+  'email.suppressed',
+];
 
 function WebhooksPage(): ReactElement {
   const qc = useQueryClient();

@@ -83,8 +83,9 @@ const TOOLS: ToolDef[] = [
         limit: { type: 'number', description: 'Max results (default 20, max 50)' },
         status: {
           type: 'string',
-          enum: ['queued', 'scheduled', 'sending', 'delivered', 'bounced', 'failed', 'suppressed'],
-          description: 'Optional status filter',
+          enum: ['queued', 'scheduled', 'sending', 'sent', 'delivered', 'partial', 'bounced', 'failed', 'suppressed'],
+          description:
+            "Optional status filter ('sent' = accepted by Cloudflare, 'delivered' = confirmed by the recipient's server)",
         },
       },
     },

@@ -22,6 +22,7 @@ import {
 import type { Bindings, QueueJob } from './types';
 import { deliverBatch } from './deliver';
 import { mcpHandler } from './mcp';
+import { handleEmailEvents } from './events';
 
 type ApiKeyRow = {
   id: string;
@@ -459,6 +460,10 @@ app.onError((err, c) => {
 
 export default {
   fetch: app.fetch,
-  queue: (batch: MessageBatch<QueueJob>, env: Bindings, ctx: ExecutionContext) =>
-    deliverBatch(batch, env, ctx),
+  // Two consumers, one worker: the send queue drives delivery; the events
+  // queue receives Cloudflare's Email Sending lifecycle events.
+  queue: (batch: MessageBatch<unknown>, env: Bindings, ctx: ExecutionContext) =>
+    batch.queue.includes('events')
+      ? handleEmailEvents(batch, env, ctx)
+      : deliverBatch(batch as MessageBatch<QueueJob>, env, ctx),
 };

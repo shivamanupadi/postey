@@ -122,6 +122,8 @@ export const MESSAGE_STATUSES = [
   'queued',
   'scheduled',
   'sending',
+  /** Accepted by Cloudflare; real delivery outcome arrives via events. */
+  'sent',
   'delivered',
   'partial',
   'bounced',
@@ -134,9 +136,12 @@ export type MessageStatus = (typeof MESSAGE_STATUSES)[number];
 export const EVENT_TYPES = [
   'queued',
   'attempted',
+  'sent',
   'delivered',
+  'deferred',
   'bounced',
   'complained',
+  'rejected',
   'failed',
   'suppressed',
   'rate_limited',
