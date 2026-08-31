@@ -87,11 +87,11 @@ function UpdatePill(): ReactElement | null {
       href={`https://postey.app/update?instance=${encodeURIComponent(instanceId)}`}
       target="_blank"
       rel="noreferrer"
-      className="mx-3 mb-1.5 flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold text-accent-deep transition hover:bg-card/55"
+      className="mx-3 mb-1.5 flex items-center gap-2 whitespace-nowrap rounded-lg px-2.5 py-2 text-xs font-semibold text-accent-deep transition hover:bg-card/55"
     >
       <Sparkles className="h-3.5 w-3.5 shrink-0 text-accent" />
-      v{latest.data} available
-      <span className="ml-auto font-medium">Update →</span>
+      <span className="min-w-0 truncate">Update to v{latest.data}</span>
+      <span className="ml-auto shrink-0 font-medium">→</span>
     </a>
   );
 }

@@ -2,7 +2,8 @@ import { useState, type ReactElement, type FormEvent } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, fmtTime } from '@/lib/api';
-import { Button, Card, Empty, ErrorNote, Field, Input, PageHeader, Segmented, Select, Table } from '@/lib/ui';
+import { Code } from 'lucide-react';
+import { Button, Card, Dropdown, Empty, ErrorNote, Field, Input, Modal, PageHeader, Segmented, Table } from '@/lib/ui';
 
 /* ── send snippets ──────────────────────────────────────────────── */
 
@@ -137,6 +138,8 @@ function KeysPage(): ReactElement {
   const [name, setName] = useState('');
   const [domainId, setDomainId] = useState('');
   const [minted, setMinted] = useState<string | null>(null);
+  /** null = closed; { key } = open (key null for the generic reference view). */
+  const [howto, setHowto] = useState<{ key: string | null } | null>(null);
   const create = useMutation({
     mutationFn: () =>
       api.post<{ id: string; key: string }>('/api/keys', {
@@ -146,6 +149,7 @@ function KeysPage(): ReactElement {
     onSuccess: data => {
       setMinted(data.key);
       setName('');
+      setHowto({ key: data.key });
       qc.invalidateQueries({ queryKey: ['keys'] });
     },
   });
@@ -164,6 +168,16 @@ function KeysPage(): ReactElement {
       <PageHeader
         title="API keys"
         sub="Keys are hashed at rest and shown once. Scope them to a domain wherever you can."
+        action={
+          <button
+            type="button"
+            onClick={() => setHowto({ key: null })}
+            className="flex items-center gap-2 whitespace-nowrap rounded-[10px] border border-line bg-card px-3.5 py-2 text-[13.5px] font-medium text-ink transition hover:bg-paper"
+          >
+            <Code className="h-4 w-4 text-ink-soft" />
+            How to send
+          </button>
+        }
       />
       <Card title="Create a key">
         <form onSubmit={submit} className="flex items-end gap-3">
@@ -172,20 +186,18 @@ function KeysPage(): ReactElement {
               <Input placeholder="production backend" value={name} onChange={e => setName(e.target.value)} />
             </Field>
           </div>
-          <div className="w-64">
-            <Field label="Scope">
-              <Select value={domainId} onChange={e => setDomainId(e.target.value)}>
-                <option value="">All domains</option>
-                {scopable?.map(d => (
-                  <option key={d.id} value={d.id}>
-                    {d.name} only
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          </div>
+          <Field label="Scope">
+            <Dropdown
+              value={domainId}
+              onChange={setDomainId}
+              options={[
+                { value: '', label: 'All domains' },
+                ...(scopable ?? []).map(d => ({ value: d.id, label: d.name })),
+              ]}
+            />
+          </Field>
           <Button type="submit" disabled={create.isPending}>
-            Create
+            Create key
           </Button>
         </form>
         <p className="mt-3 text-xs text-ink-soft">
@@ -198,10 +210,13 @@ function KeysPage(): ReactElement {
               Copy this key now - it is shown exactly once:
             </p>
             <code className="mt-1 block select-all break-all font-mono text-sm">{minted}</code>
-            <p className="mt-3 text-xs font-semibold text-accent-deep">
-              Send your first email with it:
-            </p>
-            <SendSnippets apiKey={minted} />
+            <button
+              type="button"
+              onClick={() => setHowto({ key: minted })}
+              className="mt-2.5 text-xs font-semibold text-accent-deep underline decoration-accent/40 underline-offset-2 hover:decoration-accent"
+            >
+              Send your first email with it →
+            </button>
           </div>
         )}
         <ErrorNote error={create.error ?? revoke.error} />
@@ -230,13 +245,21 @@ function KeysPage(): ReactElement {
         <Empty>{keys.isLoading ? 'Loading…' : 'No keys yet.'}</Empty>
       )}
 
-      <Card title="How to send">
-        <p className="text-sm text-ink-soft">
-          POST Resend-shaped payloads to your send API with any key. Supports templates
-          (template_id + variables), attachments (base64), idempotency keys, and scheduling.
-        </p>
-        <SendSnippets apiKey={null} />
-      </Card>
+      {howto && (
+        <Modal
+          title="How to send"
+          sub="Point your client at this instance's send API."
+          onClose={() => setHowto(null)}
+        >
+          <p className="text-[13px] leading-relaxed text-ink-soft">
+            POST Resend-shaped payloads to <code className="font-mono text-xs">/api/emails</code>{' '}
+            with any key. Supports templates (template_id + variables), attachments (base64),
+            idempotency keys, and scheduling - the mcp tab wires a coding agent to your
+            instance's built-in MCP server.
+          </p>
+          <SendSnippets apiKey={howto.key} />
+        </Modal>
+      )}
     </div>
   );
 }

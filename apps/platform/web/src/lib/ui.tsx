@@ -276,6 +276,58 @@ export function Empty({ children }: { children: ReactNode }): ReactElement {
   );
 }
 
+/** Centered modal panel. Escape and backdrop clicks close it. */
+export function Modal({
+  title,
+  sub,
+  children,
+  onClose,
+}: {
+  title: ReactNode;
+  sub?: ReactNode;
+  children: ReactNode;
+  onClose: () => void;
+}): ReactElement {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#1c1916]/40 p-4 backdrop-blur-[1.5px]"
+      onMouseDown={e => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="max-h-[92vh] w-full max-w-[620px] overflow-y-auto rounded-2xl border border-line-soft bg-card p-6 shadow-[0_32px_80px_-20px_rgba(30,25,18,0.5)]"
+      >
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-[15.5px] font-semibold text-ink">{title}</h2>
+            {sub && <p className="mt-0.5 text-xs text-ink-soft">{sub}</p>}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-lg p-1.5 text-ink-soft transition hover:bg-paper hover:text-ink"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 /** Right-side info drawer. Escape and backdrop clicks close it. */
 export function Drawer({
   title,
