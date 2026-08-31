@@ -261,13 +261,27 @@ app.delete('/templates/:id', async c => {
 
 app.get('/suppressions', async c => {
   const q = c.req.query('q')?.toLowerCase() ?? '';
-  const rows = await c.env.DB.prepare(
-    `SELECT s.*, d.name AS domain_name FROM suppressions s
+  const reason = c.req.query('reason') ?? '';
+  let sql = `SELECT s.*, d.name AS domain_name FROM suppressions s
      LEFT JOIN domains d ON d.id = s.domain_id
-     WHERE s.address LIKE ? ORDER BY s.created_at DESC LIMIT 200`
-  )
-    .bind(`%${q}%`)
+     WHERE s.address LIKE ?`;
+  const binds: unknown[] = [`%${q}%`];
+  if ((SUPPRESSION_REASONS as readonly string[]).includes(reason)) {
+    sql += ' AND s.reason = ?';
+    binds.push(reason);
+  }
+  sql += ' ORDER BY s.created_at DESC LIMIT 200';
+  const rows = await c.env.DB.prepare(sql)
+    .bind(...binds)
     .all();
+  return c.json({ data: rows.results });
+});
+
+/** Entry counts per reason, for the filter chips. */
+app.get('/suppressions/counts', async c => {
+  const rows = await c.env.DB.prepare(
+    'SELECT reason, COUNT(*) AS n FROM suppressions GROUP BY reason'
+  ).all<{ reason: string; n: number }>();
   return c.json({ data: rows.results });
 });
 

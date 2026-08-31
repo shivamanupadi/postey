@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Trash2, X } from 'lucide-react';
 import { STATUS_COLORS } from './api';
 
@@ -132,74 +133,115 @@ export function Dropdown<T extends string>({
   value,
   options,
   onChange,
+  full = false,
 }: {
   /** Prefix shown before the selected value, e.g. "Domain". */
   label?: string;
   value: T;
   options: DropdownOption<T>[];
   onChange: (v: T) => void;
+  /** Stretch the trigger to its container and match the listbox to it (modal fields). */
+  full?: boolean;
 }): ReactElement {
   const [open, setOpen] = useState(false);
+  const [rect, setRect] = useState<DOMRect | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const selected = options.find(o => o.value === value) ?? options[0];
+
+  const toggle = (): void => {
+    const r = rootRef.current?.getBoundingClientRect();
+    if (r) setRect(r);
+    setOpen(v => !v);
+  };
 
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent): void => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (!rootRef.current?.contains(t) && !listRef.current?.contains(t)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') setOpen(false);
     };
+    const onMove = (): void => setOpen(false);
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
     return () => {
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
     };
   }, [open]);
 
+  // The listbox portals to <body> with fixed positioning so it never gets
+  // clipped by overflow containers (modals, rails). Flips upward when the
+  // viewport below the trigger is too tight.
+  const listStyle = (): CSSProperties => {
+    if (!rect) return {};
+    const openUp = window.innerHeight - rect.bottom < 260 && rect.top > 280;
+    const vertical: CSSProperties = openUp
+      ? { bottom: window.innerHeight - rect.top + 6 }
+      : { top: rect.bottom + 6 };
+    const horizontal: CSSProperties = full
+      ? { left: rect.left, width: rect.width }
+      : { right: document.documentElement.clientWidth - rect.right };
+    return { position: 'fixed', ...vertical, ...horizontal };
+  };
+
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} className={`relative ${full ? 'w-full' : ''}`}>
       <button
         type="button"
-        onClick={() => setOpen(v => !v)}
+        onClick={toggle}
         aria-haspopup="listbox"
         aria-expanded={open}
         className={`flex items-center gap-1.5 whitespace-nowrap rounded-[10px] border px-3 py-2 text-[13px] font-medium transition ${
+          full ? 'w-full justify-between' : ''
+        } ${
           open ? 'border-accent/50 bg-card text-ink ring-2 ring-accent/15' : 'border-line bg-card text-ink hover:bg-paper'
         }`}
       >
-        {label && <span className="font-normal text-ink-soft">{label}</span>}
-        {selected?.label}
-        <ChevronDown className={`h-3.5 w-3.5 text-ink-soft transition-transform ${open ? 'rotate-180' : ''}`} />
+        <span className="flex min-w-0 items-center gap-1.5 truncate">
+          {label && <span className="font-normal text-ink-soft">{label}</span>}
+          {selected?.label}
+        </span>
+        <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-ink-soft transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
-      {open && (
-        <div
-          role="listbox"
-          className="absolute right-0 top-[calc(100%+6px)] z-30 min-w-[180px] rounded-xl border border-line-soft bg-card p-1.5 shadow-[0_16px_40px_-12px_rgba(30,25,18,0.25)]"
-        >
-          {options.map(o => (
-            <button
-              key={o.value}
-              type="button"
-              role="option"
-              aria-selected={o.value === value}
-              onClick={() => {
-                onChange(o.value);
-                setOpen(false);
-              }}
-              className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition ${
-                o.value === value ? 'font-semibold text-ink' : 'text-ink-soft hover:bg-paper hover:text-ink'
-              }`}
-            >
-              <span className="min-w-0 flex-1 truncate">{o.label}</span>
-              {o.hint && <span className="font-mono text-[10.5px] text-ink-soft/70">{o.hint}</span>}
-              {o.value === value && <Check className="h-3.5 w-3.5 shrink-0 text-accent" />}
-            </button>
-          ))}
-        </div>
-      )}
+      {open &&
+        rect &&
+        createPortal(
+          <div
+            ref={listRef}
+            role="listbox"
+            style={listStyle()}
+            className="z-[70] max-h-[280px] min-w-[180px] overflow-y-auto rounded-xl border border-line-soft bg-card p-1.5 shadow-[0_16px_40px_-12px_rgba(30,25,18,0.25)]"
+          >
+            {options.map(o => (
+              <button
+                key={o.value}
+                type="button"
+                role="option"
+                aria-selected={o.value === value}
+                onClick={() => {
+                  onChange(o.value);
+                  setOpen(false);
+                }}
+                className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition ${
+                  o.value === value ? 'font-semibold text-ink' : 'text-ink-soft hover:bg-paper hover:text-ink'
+                }`}
+              >
+                <span className="min-w-0 flex-1 truncate">{o.label}</span>
+                {o.hint && <span className="font-mono text-[10.5px] text-ink-soft/70">{o.hint}</span>}
+                {o.value === value && <Check className="h-3.5 w-3.5 shrink-0 text-accent" />}
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
@@ -273,6 +315,39 @@ export function Empty({ children }: { children: ReactNode }): ReactElement {
     <div className="rounded-2xl border border-dashed border-line bg-card/50 py-14 text-center text-sm text-ink-soft">
       {children}
     </div>
+  );
+}
+
+/** Round toggle chip for filter rows - label plus optional count and color dot. */
+export function FilterChip({
+  active,
+  onClick,
+  label,
+  count,
+  dot,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  count?: number;
+  dot?: string;
+}): ReactElement {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center gap-2 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-[12.5px] font-semibold transition ${
+        active
+          ? 'border-ink bg-ink text-white'
+          : 'border-line bg-card text-ink-soft hover:text-ink'
+      }`}
+    >
+      {dot && <span className={`h-[7px] w-[7px] rounded-full ${dot}`} />}
+      {label}
+      {count !== undefined && (
+        <span className="font-mono text-[10.5px] font-bold opacity-65">{count}</span>
+      )}
+    </button>
   );
 }
 

@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, fmtTime } from '@/lib/api';
 import { lazy, Suspense } from 'react';
 import { Code } from 'lucide-react';
-import { Button, ConfirmDialog, Dropdown, Empty, ErrorNote, Field, Input, Modal, PageHeader, Segmented, Table } from '@/lib/ui';
+import { Button, ConfirmDialog, Dropdown, Empty, ErrorNote, Field, FilterChip, Input, Modal, PageHeader, Segmented, Table } from '@/lib/ui';
 
 const CodeEditor = lazy(() => import('@/lib/code-editor'));
 const SNIPPET_LANG = { curl: 'shell', node: 'javascript', python: 'python', mcp: 'shell' } as const;
@@ -176,6 +176,7 @@ function KeysPage(): ReactElement {
   const [minted, setMinted] = useState<{ key: string; name: string; scope: string } | null>(null);
   const [revoking, setRevoking] = useState<KeyRow | null>(null);
   const [howto, setHowto] = useState(false);
+  const [filter, setFilter] = useState<'active' | 'revoked' | 'all'>('active');
   const create = useMutation({
     mutationFn: () =>
       api.post<{ id: string; key: string }>('/api/keys', {
@@ -211,6 +212,11 @@ function KeysPage(): ReactElement {
     if (name) create.mutate();
   };
 
+  const activeKeys = keys.data?.filter(k => !k.revoked_at) ?? [];
+  const revokedKeys = keys.data?.filter(k => k.revoked_at) ?? [];
+  const visible =
+    filter === 'all' ? (keys.data ?? []) : filter === 'active' ? activeKeys : revokedKeys;
+
   return (
     <div className="mx-auto max-w-5xl space-y-5">
       <PageHeader
@@ -240,9 +246,32 @@ function KeysPage(): ReactElement {
           </div>
         }
       />
-      {keys.data?.length ? (
+      <div className="flex flex-wrap gap-1.5">
+        <FilterChip
+          active={filter === 'active'}
+          onClick={() => setFilter('active')}
+          label="Active"
+          count={activeKeys.length}
+          dot="bg-ok"
+        />
+        <FilterChip
+          active={filter === 'revoked'}
+          onClick={() => setFilter('revoked')}
+          label="Revoked"
+          count={revokedKeys.length}
+          dot="bg-ink-soft"
+        />
+        <FilterChip
+          active={filter === 'all'}
+          onClick={() => setFilter('all')}
+          label="All"
+          count={keys.data?.length ?? 0}
+        />
+      </div>
+
+      {visible.length ? (
         <Table head={['Name', 'Key', 'Scope', 'Last used', '']}>
-          {keys.data.map(k => (
+          {visible.map(k => (
             <tr key={k.id} className={k.revoked_at ? 'opacity-50' : ''}>
               <td className="px-4 py-3 font-medium">{k.name}</td>
               <td className="px-4 py-3 font-mono text-xs">{k.key_prefix}…</td>
@@ -267,7 +296,15 @@ function KeysPage(): ReactElement {
           ))}
         </Table>
       ) : (
-        <Empty>{keys.isLoading ? 'Loading…' : 'No keys yet.'}</Empty>
+        <Empty>
+          {keys.isLoading
+            ? 'Loading…'
+            : filter === 'active'
+              ? 'No active keys.'
+              : filter === 'revoked'
+                ? 'No revoked keys.'
+                : 'No keys yet.'}
+        </Empty>
       )}
 
       {creating && !minted && (
@@ -287,6 +324,7 @@ function KeysPage(): ReactElement {
             </Field>
             <Field label="Scope">
               <Dropdown
+                full
                 value={domainId}
                 onChange={setDomainId}
                 options={[

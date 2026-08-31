@@ -11,6 +11,7 @@ import {
   Empty,
   ErrorNote,
   Field,
+  FilterChip,
   Input,
   Modal,
   PageHeader,
@@ -165,6 +166,7 @@ function DomainsPage(): ReactElement {
   });
   const [name, setName] = useState('');
   const [adding, setAdding] = useState(false);
+  const [filter, setFilter] = useState<'active' | 'pending' | 'archived' | 'all'>('active');
   const [deleting, setDeleting] = useState<DomainRow | null>(null);
   const [archiving, setArchiving] = useState<DomainRow | null>(null);
   const [inspecting, setInspecting] = useState<DomainRow | null>(null);
@@ -202,6 +204,9 @@ function DomainsPage(): ReactElement {
     if (name) add.mutate();
   };
 
+  const visible =
+    filter === 'all' ? (domains.data ?? []) : (domains.data ?? []).filter(d => d.status === filter);
+
   return (
     <div className="mx-auto max-w-5xl space-y-5">
       <PageHeader
@@ -221,9 +226,39 @@ function DomainsPage(): ReactElement {
       />
       <ErrorNote error={activate.error ?? archive.error ?? remove.error} />
 
-      {domains.data?.length ? (
+      <div className="flex flex-wrap gap-1.5">
+        <FilterChip
+          active={filter === 'active'}
+          onClick={() => setFilter('active')}
+          label="Active"
+          count={domains.data?.filter(d => d.status === 'active').length ?? 0}
+          dot="bg-ok"
+        />
+        <FilterChip
+          active={filter === 'pending'}
+          onClick={() => setFilter('pending')}
+          label="Pending"
+          count={domains.data?.filter(d => d.status === 'pending').length ?? 0}
+          dot="bg-warn"
+        />
+        <FilterChip
+          active={filter === 'archived'}
+          onClick={() => setFilter('archived')}
+          label="Archived"
+          count={domains.data?.filter(d => d.status === 'archived').length ?? 0}
+          dot="bg-ink-soft"
+        />
+        <FilterChip
+          active={filter === 'all'}
+          onClick={() => setFilter('all')}
+          label="All"
+          count={domains.data?.length ?? 0}
+        />
+      </div>
+
+      {visible.length ? (
         <Table head={['Domain', 'Status', 'Emails', 'Added', '']}>
-          {domains.data.map(d => (
+          {visible.map(d => (
             <tr key={d.id} className={d.status === 'archived' ? 'opacity-70' : ''}>
               <td className="px-4 py-3">
                 <p className="text-[13px] font-semibold">{d.name}</p>
@@ -279,7 +314,13 @@ function DomainsPage(): ReactElement {
           ))}
         </Table>
       ) : (
-        <Empty>{domains.isLoading ? 'Loading…' : 'No domains yet.'}</Empty>
+        <Empty>
+          {domains.isLoading
+            ? 'Loading…'
+            : filter === 'all'
+              ? 'No domains yet.'
+              : `No ${filter} domains.`}
+        </Empty>
       )}
 
       {adding && (

@@ -267,6 +267,7 @@ function TemplatesPage(): ReactElement {
                 {railField(
                   'Scope',
                   <Dropdown
+                    full
                     value={form.domain_id}
                     onChange={v => setForm(f => ({ ...f, domain_id: v }))}
                     options={[
