@@ -8,6 +8,9 @@ export type Bindings = {
    *  absent means the wizard falls back to token paste). */
   CF_OAUTH_CLIENT_ID?: string;
   CF_OAUTH_CLIENT_SECRET?: string;
+  /** Operator key for /api/admin/instances (Doppler postey-home, prod only -
+   *  absent means the route is indistinguishable from a 404). */
+  ADMIN_KEY?: string;
   /** IP-scoped abuse guards (prod only; absent in local dev). */
   VERIFY_LIMIT?: RateLimit;
   SESSION_LIMIT?: RateLimit;

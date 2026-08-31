@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as DeployRouteImport } from './routes/deploy'
 import { Route as DestroyRouteImport } from './routes/destroy'
 import { Route as UpdateRouteImport } from './routes/update'
@@ -17,6 +18,11 @@ import { Route as UpdateRouteImport } from './routes/update'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DeployRoute = DeployRouteImport.update({
@@ -37,12 +43,14 @@ const UpdateRoute = UpdateRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/deploy': typeof DeployRoute
   '/destroy': typeof DestroyRoute
   '/update': typeof UpdateRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/deploy': typeof DeployRoute
   '/destroy': typeof DestroyRoute
   '/update': typeof UpdateRoute
@@ -50,20 +58,22 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/deploy': typeof DeployRoute
   '/destroy': typeof DestroyRoute
   '/update': typeof UpdateRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/deploy' | '/destroy' | '/update'
+  fullPaths: '/' | '/admin' | '/deploy' | '/destroy' | '/update'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/deploy' | '/destroy' | '/update'
-  id: '__root__' | '/' | '/deploy' | '/destroy' | '/update'
+  to: '/' | '/admin' | '/deploy' | '/destroy' | '/update'
+  id: '__root__' | '/' | '/admin' | '/deploy' | '/destroy' | '/update'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRoute
   DeployRoute: typeof DeployRoute
   DestroyRoute: typeof DestroyRoute
   UpdateRoute: typeof UpdateRoute
@@ -76,6 +86,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/deploy': {
@@ -104,6 +121,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRoute,
   DeployRoute: DeployRoute,
   DestroyRoute: DestroyRoute,
   UpdateRoute: UpdateRoute,
