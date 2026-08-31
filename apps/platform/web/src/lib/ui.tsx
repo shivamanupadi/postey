@@ -44,7 +44,7 @@ export function Card({
   children: ReactNode;
 }): ReactElement {
   return (
-    <div className="rounded-2xl border border-line-soft bg-white p-6 shadow-[0_1px_2px_rgba(30,25,18,0.04)]">
+    <div className="rounded-2xl border border-line-soft bg-card p-6 shadow-[0_1px_2px_rgba(30,25,18,0.04)]">
       {(title || action) && (
         <div className={`flex items-center justify-between gap-4 ${sub ? 'mb-1' : 'mb-4'}`}>
           {title ? <h2 className="text-[15px] font-semibold text-ink">{title}</h2> : <span />}
@@ -72,8 +72,8 @@ export function Button({
 }): ReactElement {
   const styles = {
     primary: 'bg-accent text-white hover:bg-accent-deep',
-    ghost: 'border border-line bg-white text-ink hover:bg-paper',
-    danger: 'border border-bad/25 bg-white text-bad hover:bg-bad-soft/60',
+    ghost: 'border border-line bg-card text-ink hover:bg-paper',
+    danger: 'border border-bad/25 bg-card text-bad hover:bg-bad-soft/60',
   };
   return (
     <button
@@ -88,7 +88,7 @@ export function Button({
 }
 
 const fieldClass =
-  'w-full rounded-[10px] border border-line bg-white px-3.5 py-2.5 text-sm text-ink outline-none transition placeholder:text-ink-soft/45 focus:border-accent focus:ring-2 focus:ring-accent/15';
+  'w-full rounded-[10px] border border-line bg-card px-3.5 py-2.5 text-sm text-ink outline-none transition placeholder:text-ink-soft/45 focus:border-accent focus:ring-2 focus:ring-accent/15';
 
 export function Input(props: React.InputHTMLAttributes<HTMLInputElement>): ReactElement {
   return <input {...props} className={`${fieldClass} ${props.className ?? ''}`} />;
@@ -135,7 +135,7 @@ export function Segmented<T extends string>({
           type="button"
           onClick={() => onChange(v)}
           className={`rounded-full px-3 py-1 transition ${
-            value === v ? 'bg-white text-ink shadow-[0_1px_2px_rgba(30,25,18,0.08)]' : 'text-ink-soft hover:text-ink'
+            value === v ? 'bg-card text-ink shadow-[0_1px_2px_rgba(30,25,18,0.08)]' : 'text-ink-soft hover:text-ink'
           }`}
         >
           {v}
@@ -153,7 +153,7 @@ export function Table({
   children: ReactNode;
 }): ReactElement {
   return (
-    <div className="overflow-x-auto rounded-2xl border border-line-soft bg-white shadow-[0_1px_2px_rgba(30,25,18,0.04)]">
+    <div className="overflow-x-auto rounded-2xl border border-line-soft bg-card shadow-[0_1px_2px_rgba(30,25,18,0.04)]">
       <table className="w-full text-left text-sm">
         <thead>
           <tr className="border-b border-line-soft">
@@ -167,7 +167,7 @@ export function Table({
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-[#f1ede7]">{children}</tbody>
+        <tbody className="divide-y divide-[#efe8dc]">{children}</tbody>
       </table>
     </div>
   );
@@ -175,7 +175,7 @@ export function Table({
 
 export function Empty({ children }: { children: ReactNode }): ReactElement {
   return (
-    <div className="rounded-2xl border border-dashed border-line bg-white/50 py-14 text-center text-sm text-ink-soft">
+    <div className="rounded-2xl border border-dashed border-line bg-card/50 py-14 text-center text-sm text-ink-soft">
       {children}
     </div>
   );

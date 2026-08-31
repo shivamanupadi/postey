@@ -83,7 +83,7 @@ function WebhooksPage(): ReactElement {
                 className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
                   events.includes(ev)
                     ? 'border-accent/50 bg-accent-soft text-accent-deep'
-                    : 'border-line bg-white text-ink-soft hover:text-ink'
+                    : 'border-line bg-card text-ink-soft hover:text-ink'
                 }`}
               >
                 {ev}

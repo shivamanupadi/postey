@@ -67,7 +67,7 @@ function LoginPage(): ReactElement {
         </div>
         <form
           onSubmit={submit}
-          className="space-y-4 rounded-[20px] border border-line-soft bg-white p-7 shadow-[0_12px_40px_-16px_rgba(30,25,18,0.18)]"
+          className="space-y-4 rounded-[20px] border border-line-soft bg-card p-7 shadow-[0_12px_40px_-16px_rgba(30,25,18,0.18)]"
         >
           <h1 className="text-[17px] font-semibold">
             {claiming ? 'Claim this instance' : 'Sign in'}

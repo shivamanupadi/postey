@@ -20,7 +20,7 @@ interface OverviewData {
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }): ReactElement {
   return (
-    <div className="rounded-2xl border border-line-soft bg-white p-5 shadow-[0_1px_2px_rgba(30,25,18,0.04)]">
+    <div className="rounded-2xl border border-line-soft bg-card p-5 shadow-[0_1px_2px_rgba(30,25,18,0.04)]">
       <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-soft">{label}</p>
       <p className="mt-2 text-[28px] font-semibold leading-none tracking-tight tabular-nums">
         {value}
@@ -70,7 +70,7 @@ function Overview(): ReactElement {
                 key={status}
                 to="/emails"
                 search={{ status }}
-                className="flex items-center gap-2.5 rounded-xl border border-line-soft bg-white px-3.5 py-2 transition hover:border-accent/40 hover:shadow-[0_2px_8px_-2px_rgba(30,25,18,0.1)]"
+                className="flex items-center gap-2.5 rounded-xl border border-line-soft bg-card px-3.5 py-2 transition hover:border-accent/40 hover:shadow-[0_2px_8px_-2px_rgba(30,25,18,0.1)]"
               >
                 <Badge status={status} />
                 <span className="font-mono text-sm tabular-nums">{n}</span>

@@ -99,7 +99,7 @@ function SendSnippets({ apiKey }: { apiKey: string | null }): ReactElement {
           className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
             copied
               ? 'bg-accent-soft text-accent-deep'
-              : 'border border-line text-ink-soft hover:bg-white hover:text-ink'
+              : 'border border-line text-ink-soft hover:bg-card hover:text-ink'
           }`}
         >
           {copied ? 'Copied ✓' : 'Copy'}

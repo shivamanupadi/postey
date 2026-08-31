@@ -7,10 +7,10 @@ import {
   Inbox,
   KeyRound,
   LayoutTemplate,
-  LogOut,
   Settings,
   ShieldOff,
   Webhook,
+  type LucideIcon,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 
@@ -18,15 +18,38 @@ export const Route = createRootRoute({
   component: RootLayout,
 });
 
-const NAV = [
-  { to: '/', label: 'Overview', icon: Gauge },
-  { to: '/emails', label: 'Emails', icon: Inbox },
-  { to: '/domains', label: 'Domains', icon: Globe },
-  { to: '/keys', label: 'API keys', icon: KeyRound },
-  { to: '/templates', label: 'Templates', icon: LayoutTemplate },
-  { to: '/suppressions', label: 'Suppressions', icon: ShieldOff },
-  { to: '/webhooks', label: 'Webhooks', icon: Webhook },
-  { to: '/settings', label: 'Settings', icon: Settings },
+interface NavItem {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+  /** Key into the overview payload for the little count badge. */
+  countKey?: 'last7d' | 'suppressions';
+}
+
+const SECTIONS: { label: string | null; items: NavItem[] }[] = [
+  {
+    label: null,
+    items: [
+      { to: '/', label: 'Overview', icon: Gauge },
+      { to: '/emails', label: 'Emails', icon: Inbox, countKey: 'last7d' },
+    ],
+  },
+  {
+    label: 'Send',
+    items: [
+      { to: '/domains', label: 'Domains', icon: Globe },
+      { to: '/keys', label: 'API keys', icon: KeyRound },
+      { to: '/templates', label: 'Templates', icon: LayoutTemplate },
+    ],
+  },
+  {
+    label: 'Deliverability',
+    items: [
+      { to: '/suppressions', label: 'Suppressions', icon: ShieldOff, countKey: 'suppressions' },
+      { to: '/webhooks', label: 'Webhooks', icon: Webhook },
+      { to: '/settings', label: 'Settings', icon: Settings },
+    ],
+  },
 ];
 
 interface InstanceConfig {
@@ -61,12 +84,20 @@ function UpdatePill(): ReactElement | null {
       href={`https://postey.app/update?instance=${encodeURIComponent(instanceId)}`}
       target="_blank"
       rel="noreferrer"
-      className="mx-3 mb-2.5 block rounded-[10px] bg-accent/18 px-3 py-2 text-xs font-semibold text-[#ff8fa3] transition hover:bg-accent/28 hover:text-[#ffb3c0]"
+      className="mx-3 mb-2.5 block rounded-[10px] bg-accent-soft px-3 py-2 text-xs font-semibold text-accent-deep transition hover:brightness-[.97]"
     >
       Update available: v{latest.data} →
     </a>
   );
 }
+
+const initials = (email: string): string => {
+  const local = email.split('@')[0] ?? '';
+  const parts = local.split(/[._-]+/).filter(Boolean);
+  const chars =
+    parts.length >= 2 ? `${parts[0][0]}${parts[1][0]}` : local.slice(0, 2) || '?';
+  return chars.toUpperCase();
+};
 
 function RootLayout(): ReactElement {
   const path = useRouterState({ select: s => s.location.pathname });
@@ -74,6 +105,13 @@ function RootLayout(): ReactElement {
   const me = useQuery({
     queryKey: ['me'],
     queryFn: () => api.get<{ email: string }>('/api/me'),
+    retry: false,
+  });
+  // Shares the overview cache with the Overview page; feeds the count badges.
+  const overview = useQuery({
+    queryKey: ['overview'],
+    queryFn: () => api.get<{ last7d: number; suppressions: number }>('/api/overview'),
+    staleTime: 60_000,
     retry: false,
   });
 
@@ -90,43 +128,69 @@ function RootLayout(): ReactElement {
 
   return (
     <div className="flex min-h-screen">
-      <aside className="sticky top-0 flex h-screen w-[218px] shrink-0 flex-col bg-ink-deep text-cream">
+      <aside className="sticky top-0 flex h-screen w-[220px] shrink-0 flex-col border-r border-[#ded5c6] bg-paper-deep">
         <div className="flex items-center gap-2.5 px-5 pb-4 pt-5">
-          <img src="/logo-dark.svg" alt="" className="h-6 w-6" />
-          <span className="text-[16.5px] font-semibold tracking-tight">
+          <img src="/logo.svg" alt="" className="h-6 w-6" />
+          <span className="text-[16.5px] font-semibold tracking-tight text-ink">
             postey<span className="text-accent">.</span>
           </span>
         </div>
-        <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pt-1">
-          {NAV.map(item => {
-            const active = item.to === '/' ? path === '/' : path.startsWith(item.to);
-            return (
-              <Link
-                key={item.to}
-                to={item.to}
-                className={`flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-[13.5px] font-medium transition ${
-                  active ? 'bg-white/9 text-cream' : 'text-cream/60 hover:bg-white/5 hover:text-cream'
-                }`}
-              >
-                <item.icon className={`h-4 w-4 ${active ? 'text-accent' : ''}`} />
-                {item.label}
-              </Link>
-            );
-          })}
+        <nav className="flex-1 overflow-y-auto px-3">
+          {SECTIONS.map((section, si) => (
+            <div key={section.label ?? si}>
+              {section.label && (
+                <div className="px-2.5 pb-1.5 pt-4 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-ink-soft/70">
+                  {section.label}
+                </div>
+              )}
+              <div className="space-y-0.5">
+                {section.items.map(item => {
+                  const active = item.to === '/' ? path === '/' : path.startsWith(item.to);
+                  const count = item.countKey ? overview.data?.[item.countKey] : undefined;
+                  return (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      className={`relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13.5px] transition ${
+                        active
+                          ? 'bg-paper-deeper font-semibold text-ink before:absolute before:-left-3 before:bottom-[7px] before:top-[7px] before:w-[3px] before:rounded-r-[3px] before:bg-accent'
+                          : 'font-medium text-ink-soft hover:bg-card/55 hover:text-ink'
+                      }`}
+                    >
+                      <item.icon
+                        className={`h-4 w-4 ${active ? 'text-ink' : 'text-ink-soft/70'}`}
+                      />
+                      {item.label}
+                      {count !== undefined && count > 0 && (
+                        <span className="ml-auto font-mono text-[10.5px] font-semibold text-ink-soft/70 tabular-nums">
+                          {count > 999 ? '1k+' : count}
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
         <UpdatePill />
-        <div className="border-t border-white/10 px-5 py-4">
-          <p className="truncate text-xs text-cream/50">{me.data?.email}</p>
-          <button
-            className="mt-2 flex items-center gap-1.5 text-xs font-medium text-cream/60 transition hover:text-cream"
-            onClick={async () => {
-              await api.post('/api/auth/logout');
-              queryClient.clear();
-              window.location.href = '/login';
-            }}
-          >
-            <LogOut className="h-3.5 w-3.5" /> Sign out
-          </button>
+        <div className="flex items-center gap-2.5 border-t border-[#ded5c6] px-4 py-3.5">
+          <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-ink-deep text-[10.5px] font-semibold text-cream">
+            {initials(me.data?.email ?? '')}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-[11.5px] text-ink-soft">{me.data?.email}</p>
+            <button
+              className="text-[10.5px] font-medium text-ink-soft/70 transition hover:text-ink"
+              onClick={async () => {
+                await api.post('/api/auth/logout');
+                queryClient.clear();
+                window.location.href = '/login';
+              }}
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </aside>
       <main className="min-w-0 flex-1 px-10 py-9">

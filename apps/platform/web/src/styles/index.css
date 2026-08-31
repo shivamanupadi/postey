@@ -3,13 +3,16 @@
 /* OpenSEO-style warm-cream theme with a Neon Coral primary.
  * Neutrals are shared with the postey.app marketing site - keep in sync. */
 @theme {
-  --color-paper: #f5f1ec; /* page ground */
-  --color-paper-deep: #eee8de; /* bands / table heads */
+  /* Linen palette: every ground is tinted - nothing pure white. */
+  --color-paper: #f6f2ec; /* content ground */
+  --color-paper-deep: #eee8de; /* sidebar / bands */
+  --color-paper-deeper: #e5ddcf; /* active-nav tint */
+  --color-card: #fbf8f3; /* raised surfaces (cards, tables, inputs) */
   --color-ink: #111111;
-  --color-ink-deep: #1c1916; /* dark sidebar / terminal */
+  --color-ink-deep: #1c1916; /* terminal blocks / avatar chip */
   --color-ink-soft: #64615c;
   --color-line: #d8d1c8;
-  --color-line-soft: #e7e1d8;
+  --color-line-soft: #e7dfd2;
   --color-cream: #f2efe9; /* text on dark */
   --color-accent: #ff4d6d; /* Neon Coral */
   --color-accent-deep: #e63757;
