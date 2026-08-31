@@ -132,11 +132,9 @@ function DailyChart({ daily }: { daily: { day: string; n: number }[] }): ReactEl
             {/* full-height hit target so hover works on short bars */}
             <rect x={x} y={padT} width={bw} height={plotH} fill="transparent" />
             <path d={topRoundRect(x, y(d.n), bw, hOf(d.n), 4)} fill={CHART_GREEN} />
-            {i % 2 === 0 && (
-              <text x={x + bw / 2} y={H - 6} textAnchor="middle" fontSize={10} fill="#8a867f">
-                {d.label}
-              </text>
-            )}
+            <text x={x + bw / 2} y={H - 6} textAnchor="middle" fontSize={10} fill="#8a867f">
+              {d.label}
+            </text>
             {d.n === maxN && d.n > 0 && (
               <text
                 x={x + bw / 2}
