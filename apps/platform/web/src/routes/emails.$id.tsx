@@ -1,9 +1,11 @@
-import { useState, type ReactElement, type ReactNode } from 'react';
+import { lazy, Suspense, useState, type ReactElement, type ReactNode } from 'react';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Paperclip } from 'lucide-react';
 import { api, fmtTime } from '@/lib/api';
 import { Badge, Card, Segmented, Table } from '@/lib/ui';
+
+const CodeEditor = lazy(() => import('@/lib/code-editor'));
 
 export const Route = createFileRoute('/emails/$id')({
   component: EmailDetail,
@@ -160,11 +162,26 @@ function EmailDetail(): ReactElement {
                   className="h-[440px] w-full rounded-xl border border-line-soft bg-white"
                 />
               ) : (
-                <pre className="max-h-[440px] overflow-auto rounded-xl bg-ink-deep p-4 font-mono text-xs leading-relaxed text-cream/90">
-                  {view === 'text'
-                    ? (m.body.text ?? '(no text part)')
-                    : (m.body.html ?? '(no html part)')}
-                </pre>
+                <div className="overflow-hidden rounded-xl border border-line-soft">
+                  <Suspense
+                    fallback={
+                      <div className="flex h-[440px] items-center justify-center bg-card text-xs text-ink-soft">
+                        Loading…
+                      </div>
+                    }
+                  >
+                    <CodeEditor
+                      value={
+                        view === 'text'
+                          ? (m.body.text ?? '(no text part)')
+                          : (m.body.html ?? '(no html part)')
+                      }
+                      lang={view === 'text' ? 'text' : 'html'}
+                      readOnly
+                      height="440px"
+                    />
+                  </Suspense>
+                </div>
               )
             ) : (
               <p className="py-8 text-center text-sm text-ink-soft">

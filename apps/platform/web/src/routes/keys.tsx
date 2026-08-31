@@ -2,8 +2,12 @@ import { useState, type ReactElement, type FormEvent } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, fmtTime } from '@/lib/api';
+import { lazy, Suspense } from 'react';
 import { Code } from 'lucide-react';
 import { Button, Card, Dropdown, Empty, ErrorNote, Field, Input, Modal, PageHeader, Segmented, Table } from '@/lib/ui';
+
+const CodeEditor = lazy(() => import('@/lib/code-editor'));
+const SNIPPET_LANG = { curl: 'shell', node: 'javascript', python: 'python', mcp: 'shell' } as const;
 
 /* ── send snippets ──────────────────────────────────────────────── */
 
@@ -106,9 +110,17 @@ function SendSnippets({ apiKey }: { apiKey: string | null }): ReactElement {
           {copied ? 'Copied ✓' : 'Copy'}
         </button>
       </div>
-      <pre className="mt-3 overflow-x-auto rounded-xl bg-ink-deep p-4 font-mono text-xs leading-relaxed text-cream/90">
-        {snippet}
-      </pre>
+      <div className="mt-3 overflow-hidden rounded-xl border border-line">
+        <Suspense
+          fallback={
+            <div className="flex h-[220px] items-center justify-center bg-card text-xs text-ink-soft">
+              Loading…
+            </div>
+          }
+        >
+          <CodeEditor value={snippet} lang={SNIPPET_LANG[lang]} readOnly height="240px" />
+        </Suspense>
+      </div>
     </div>
   );
 }
