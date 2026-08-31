@@ -19,11 +19,22 @@ async function hasRecord(name: string, type: 'TXT' | 'MX'): Promise<boolean> {
   }
 }
 
-export async function sendingDnsReady(domain: string): Promise<boolean> {
+export interface SendingDnsChecks {
+  spf: boolean;
+  dkim: boolean;
+  mx: boolean;
+}
+
+export async function sendingDnsChecks(domain: string): Promise<SendingDnsChecks> {
   const [spf, dkim, mx] = await Promise.all([
     hasRecord(`cf-bounce.${domain}`, 'TXT'),
     hasRecord(`cf-bounce._domainkey.${domain}`, 'TXT'),
     hasRecord(`cf-bounce.${domain}`, 'MX'),
   ]);
+  return { spf, dkim, mx };
+}
+
+export async function sendingDnsReady(domain: string): Promise<boolean> {
+  const { spf, dkim, mx } = await sendingDnsChecks(domain);
   return spf || dkim || mx;
 }

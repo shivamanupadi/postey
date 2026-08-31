@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { newId, randomHex, sha256Hex, SUPPRESSION_REASONS } from '@postey/shared';
-import { sendingDnsReady } from '../lib/dns';
+import { sendingDnsChecks, sendingDnsReady } from '../lib/dns';
 import type { Bindings, Variables } from '../types';
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
@@ -17,7 +17,10 @@ const domainName = z
 
 app.get('/domains', async c => {
   const rows = await c.env.DB.prepare(
-    `SELECT d.*, (SELECT COUNT(*) FROM messages m WHERE m.domain_id = d.id) AS message_count
+    `SELECT d.*,
+       (SELECT COUNT(*) FROM messages m WHERE m.domain_id = d.id) AS message_count,
+       (SELECT COUNT(*) FROM api_keys k WHERE k.domain_id = d.id AND k.revoked_at IS NULL) AS key_count,
+       (SELECT COUNT(*) FROM templates t WHERE t.domain_id = d.id) AS template_count
      FROM domains d ORDER BY d.created_at`
   ).all<Record<string, unknown> & { name: string; status: string }>();
   // Live onboarding readiness for non-active domains (capped; DoH is cheap).
@@ -48,6 +51,15 @@ app.post('/domains', zValidator('json', z.object({ name: domainName }) ), async 
     throw err;
   }
   return c.json({ data: { id, name, status: 'pending' } });
+});
+
+// Live per-record onboarding checks for the domain info drawer.
+app.get('/domains/:id/checks', async c => {
+  const domain = await c.env.DB.prepare('SELECT name FROM domains WHERE id = ?')
+    .bind(c.req.param('id'))
+    .first<{ name: string }>();
+  if (!domain) return c.json({ error: 'Not found' }, 404);
+  return c.json({ data: await sendingDnsChecks(domain.name) });
 });
 
 app.post('/domains/:id/activate', async c => {
@@ -87,15 +99,38 @@ app.put(
   }
 );
 
+// Archive: keeps the domain and its history but stops sending immediately -
+// the send worker refuses any non-'active' status. Reversible via activate
+// (which re-verifies the onboarding DNS before flipping back on).
+app.post('/domains/:id/archive', async c => {
+  const { meta } = await c.env.DB.prepare(
+    "UPDATE domains SET status = 'archived' WHERE id = ? AND status = 'active'"
+  )
+    .bind(c.req.param('id'))
+    .run();
+  if (!meta.changes) return c.json({ error: 'Domain not found or not active' }, 409);
+  return c.json({ data: { ok: true } });
+});
+
 app.delete('/domains/:id', async c => {
   const id = c.req.param('id');
   const used = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM messages WHERE domain_id = ?')
     .bind(id)
     .first<{ n: number }>();
   if ((used?.n ?? 0) > 0) {
-    return c.json({ error: 'Domain has send history; it cannot be deleted' }, 409);
+    return c.json({ error: 'Domain has send history; archive it instead' }, 409);
   }
-  await c.env.DB.prepare('DELETE FROM domains WHERE id = ?').bind(id).run();
+  // Detach scoped resources first so the FK references never dangle: scoped
+  // keys are revoked and unscoped, scoped templates become shared, scoped
+  // suppressions go with the domain.
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      'UPDATE api_keys SET domain_id = NULL, revoked_at = COALESCE(revoked_at, ?) WHERE domain_id = ?'
+    ).bind(Date.now(), id),
+    c.env.DB.prepare('UPDATE templates SET domain_id = NULL WHERE domain_id = ?').bind(id),
+    c.env.DB.prepare('DELETE FROM suppressions WHERE domain_id = ?').bind(id),
+    c.env.DB.prepare('DELETE FROM domains WHERE id = ?').bind(id),
+  ]);
   return c.json({ data: { ok: true } });
 });
 

@@ -131,8 +131,9 @@ function KeysPage(): ReactElement {
   const keys = useQuery({ queryKey: ['keys'], queryFn: () => api.get<KeyRow[]>('/api/keys') });
   const domains = useQuery({
     queryKey: ['domains'],
-    queryFn: () => api.get<{ id: string; name: string }[]>('/api/domains'),
+    queryFn: () => api.get<{ id: string; name: string; status: string }[]>('/api/domains'),
   });
+  const scopable = domains.data?.filter(d => d.status !== 'archived');
   const [name, setName] = useState('');
   const [domainId, setDomainId] = useState('');
   const [minted, setMinted] = useState<string | null>(null);
@@ -175,7 +176,7 @@ function KeysPage(): ReactElement {
             <Field label="Scope">
               <Select value={domainId} onChange={e => setDomainId(e.target.value)}>
                 <option value="">All domains</option>
-                {domains.data?.map(d => (
+                {scopable?.map(d => (
                   <option key={d.id} value={d.id}>
                     {d.name} only
                   </option>

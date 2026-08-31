@@ -30,6 +30,9 @@ export const fmtTime = (ms: number | null | undefined): string =>
   ms ? new Date(ms).toLocaleString() : '-';
 
 export const STATUS_COLORS: Record<string, string> = {
+  active: 'bg-ok-soft text-ok',
+  pending: 'bg-warn-soft text-warn',
+  archived: 'bg-ink/8 text-ink-soft',
   delivered: 'bg-ok-soft text-ok',
   sent: 'bg-ok-soft text-ok',
   queued: 'bg-warn-soft text-warn',
@@ -43,6 +46,4 @@ export const STATUS_COLORS: Record<string, string> = {
   failed: 'bg-bad-soft text-bad',
   suppressed: 'bg-ink/10 text-ink-soft',
   canceled: 'bg-ink/10 text-ink-soft',
-  active: 'bg-ok/10 text-ok',
-  pending: 'bg-accent-soft text-accent-deep',
 };

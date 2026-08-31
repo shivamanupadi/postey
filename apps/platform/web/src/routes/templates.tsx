@@ -36,8 +36,9 @@ function TemplatesPage(): ReactElement {
 
   const domains = useQuery({
     queryKey: ['domains'],
-    queryFn: () => api.get<{ id: string; name: string }[]>('/api/domains'),
+    queryFn: () => api.get<{ id: string; name: string; status: string }[]>('/api/domains'),
   });
+  const scopable = domains.data?.filter(d => d.status !== 'archived');
   const save = useMutation({
     mutationFn: () => {
       const body = {
@@ -100,7 +101,7 @@ function TemplatesPage(): ReactElement {
             <Field label="Scope">
               <Select value={form.domain_id} onChange={set('domain_id')}>
                 <option value="">Shared (all domains)</option>
-                {domains.data?.map(d => (
+                {scopable?.map(d => (
                   <option key={d.id} value={d.id}>
                     {d.name} only
                   </option>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
-import { Check, ChevronDown } from 'lucide-react';
+import { Check, ChevronDown, Trash2, X } from 'lucide-react';
 import { STATUS_COLORS } from './api';
 
 /** Consistent page header: title, optional one-line description, action slot. */
@@ -81,7 +81,7 @@ export function Button({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`rounded-[10px] px-4 py-2 text-[13.5px] font-medium transition disabled:cursor-not-allowed disabled:opacity-45 ${styles[variant]}`}
+      className={`whitespace-nowrap rounded-[10px] px-4 py-2 text-[13.5px] font-medium transition disabled:cursor-not-allowed disabled:opacity-45 ${styles[variant]}`}
     >
       {children}
     </button>
@@ -272,6 +272,163 @@ export function Empty({ children }: { children: ReactNode }): ReactElement {
   return (
     <div className="rounded-2xl border border-dashed border-line bg-card/50 py-14 text-center text-sm text-ink-soft">
       {children}
+    </div>
+  );
+}
+
+/** Right-side info drawer. Escape and backdrop clicks close it. */
+export function Drawer({
+  title,
+  sub,
+  children,
+  onClose,
+}: {
+  title: ReactNode;
+  sub?: ReactNode;
+  children: ReactNode;
+  onClose: () => void;
+}): ReactElement {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-[#1c1916]/30 backdrop-blur-[1px]"
+      onMouseDown={e => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <aside
+        role="dialog"
+        aria-modal="true"
+        className="fixed inset-y-0 right-0 flex w-full max-w-[400px] flex-col border-l border-line-soft bg-card shadow-[-24px_0_60px_-24px_rgba(30,25,18,0.35)]"
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-line-soft px-6 py-4">
+          <div className="min-w-0">
+            <h2 className="text-[15.5px] font-semibold text-ink">{title}</h2>
+            {sub && <div className="mt-0.5 text-xs text-ink-soft">{sub}</div>}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-lg p-1.5 text-ink-soft transition hover:bg-paper hover:text-ink"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div>
+      </aside>
+    </div>
+  );
+}
+
+/** Centered confirmation dialog. With `confirmWord`, the confirm button stays
+ *  disabled until the word is typed (for irreversible actions). Escape and
+ *  backdrop clicks cancel. */
+export function ConfirmDialog({
+  title,
+  sub,
+  children,
+  confirmLabel,
+  confirmWord,
+  danger = true,
+  busy = false,
+  onConfirm,
+  onCancel,
+}: {
+  title: string;
+  sub?: string;
+  children?: ReactNode;
+  confirmLabel: string;
+  confirmWord?: string;
+  danger?: boolean;
+  busy?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}): ReactElement {
+  const [typed, setTyped] = useState('');
+  const armed = !confirmWord || typed.trim() === confirmWord;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onCancel();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onCancel]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#1c1916]/40 backdrop-blur-[1.5px] p-4"
+      onMouseDown={e => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
+    >
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-label={title}
+        className="w-full max-w-[430px] rounded-2xl border border-line-soft bg-card p-6 shadow-[0_32px_80px_-20px_rgba(30,25,18,0.5)]"
+      >
+        <div className="mb-2.5 flex items-center gap-3">
+          <span
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] ${
+              danger ? 'bg-bad-soft text-bad' : 'bg-accent-soft text-accent-deep'
+            }`}
+          >
+            <Trash2 className="h-4 w-4" />
+          </span>
+          <div>
+            <h2 className="text-[15.5px] font-semibold text-ink">{title}</h2>
+            {sub && <p className="text-xs text-ink-soft">{sub}</p>}
+          </div>
+        </div>
+        {children}
+        {confirmWord && (
+          <>
+            <label
+              htmlFor="confirm-word"
+              className="mb-1.5 mt-4 block text-[10.5px] font-semibold uppercase tracking-[0.06em] text-ink-soft"
+            >
+              Type {confirmWord} to confirm
+            </label>
+            <input
+              id="confirm-word"
+              value={typed}
+              onChange={e => setTyped(e.target.value)}
+              placeholder={confirmWord}
+              autoComplete="off"
+              autoFocus
+              className="w-full rounded-[10px] border border-line bg-paper px-3 py-2 font-mono text-[13px] text-ink outline-none transition focus:border-bad focus:ring-2 focus:ring-bad/15"
+            />
+          </>
+        )}
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-[10px] border border-line bg-card px-4 py-2 text-[13px] font-medium text-ink transition hover:bg-paper"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={!armed || busy}
+            className={`rounded-[10px] px-4 py-2 text-[13px] font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-40 ${
+              danger ? 'bg-bad hover:brightness-90' : 'bg-accent hover:bg-accent-deep'
+            }`}
+          >
+            {busy ? 'Working…' : confirmLabel}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
