@@ -406,9 +406,9 @@ export async function dispatchWebhooks(
           if (!ok && attempt < 3) await new Promise(r => setTimeout(r, attempt * 2000));
         }
         await env.DB.prepare(
-          'INSERT INTO webhook_deliveries (id, webhook_id, event_id, status, attempts, response_code, last_attempt_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+          'INSERT INTO webhook_deliveries (id, webhook_id, event_id, event_type, status, attempts, response_code, last_attempt_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
         )
-          .bind(newId('whd'), hook.id, eventId, ok ? 'delivered' : 'failed', ok ? 1 : 3, responseCode, Date.now())
+          .bind(newId('whd'), hook.id, eventId, payload.type, ok ? 'delivered' : 'failed', ok ? 1 : 3, responseCode, Date.now())
           .run()
           .catch(() => undefined);
       })
