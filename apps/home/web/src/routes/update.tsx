@@ -1,18 +1,17 @@
-import { useEffect, useRef, useState, type ReactElement } from 'react';
+import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Check, Loader2 } from 'lucide-react';
 import {
   BackButton,
   Card,
   CardTitle,
+  collapseSteps,
   ConnectSection,
   CopyField,
   ErrorBox,
-  NoteBox,
   PrimaryButton,
   PROVISION_PLAN,
   readSse,
-  StepList,
   useConnect,
   WizardShell,
   wizardApi,
@@ -37,17 +36,192 @@ const PHASE_INDEX: Record<Phase, number> = {
   done: 2,
 };
 
+/* ── split shell: rail (instance + plan) | phase panel ──────────── */
+
+function SplitShell({ rail, children }: { rail: ReactNode; children: ReactNode }): ReactElement {
+  return (
+    <div className="mx-auto grid w-full max-w-[900px] overflow-hidden rounded-[20px] border border-line-soft bg-white shadow-[0_12px_40px_-16px_rgba(30,25,18,0.18)] md:grid-cols-[330px_1fr]">
+      <aside className="border-b border-line-soft bg-paper px-6 py-6 md:border-b-0 md:border-r">
+        {rail}
+      </aside>
+      <div className="flex min-h-[440px] flex-col p-7">{children}</div>
+    </div>
+  );
+}
+
 function VersionArrow({ from, to }: { from: string | null; to: string | null }): ReactElement {
   return (
-    <span className="inline-flex items-center gap-2 font-mono text-[13px]">
-      <span className="rounded-md bg-paper px-2 py-0.5 text-ink">v{from ?? '?'}</span>
-      <span className="text-ink-soft">→</span>
-      <span className="rounded-md bg-accent-soft px-2 py-0.5 font-medium text-accent-deep">
+    <span className="inline-flex items-center gap-2 font-mono text-[12px]">
+      <span className="rounded-md bg-paper-deep px-2 py-0.5 text-ink-soft">v{from ?? '?'}</span>
+      <span className="text-accent">→</span>
+      <span className="rounded-md bg-accent-soft px-2 py-0.5 font-semibold text-accent-deep">
         v{to ?? '?'}
       </span>
     </span>
   );
 }
+
+type RailRow = { stepId: string; label: string; status: StepEvent['status'] | 'pending' };
+
+function railRows(steps: StepEvent[]): RailRow[] {
+  const byId = new Map(collapseSteps(steps).map(s => [s.stepId, s]));
+  const rows: RailRow[] = PROVISION_PLAN.map(p => {
+    const ev = byId.get(p.stepId);
+    return { stepId: p.stepId, label: p.label, status: ev?.status ?? 'pending' };
+  });
+  for (const ev of collapseSteps(steps)) {
+    if (!rows.some(r => r.stepId === ev.stepId)) {
+      rows.push({ stepId: ev.stepId, label: ev.label, status: ev.status });
+    }
+  }
+  return rows;
+}
+
+function RailStepIcon({ status }: { status: RailRow['status'] }): ReactElement {
+  if (status === 'ok')
+    return (
+      <span className="flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-full bg-emerald-100">
+        <Check className="h-2.5 w-2.5 text-emerald-700" strokeWidth={3} />
+      </span>
+    );
+  if (status === 'fail')
+    return <span className="h-[15px] w-[15px] shrink-0 rounded-full bg-red-100 ring-1 ring-red-300" />;
+  if (status === 'start' || status === 'retry')
+    return <Loader2 className="h-[15px] w-[15px] shrink-0 animate-spin text-accent" />;
+  return <span className="h-[15px] w-[15px] shrink-0 rounded-full border-[1.5px] border-line" />;
+}
+
+/** The rail: instance identity + the always-visible 14-step plan. */
+function Rail({
+  state,
+  latest,
+  upToDate,
+  steps,
+  running,
+  finished,
+  elapsed,
+  domain,
+}: {
+  state: ResumeState | null;
+  latest: string | null;
+  upToDate: boolean;
+  steps: StepEvent[];
+  running: boolean;
+  finished: boolean;
+  elapsed: number;
+  domain: string;
+}): ReactElement {
+  const rows = railRows(steps);
+  const done = rows.filter(r => r.status === 'ok').length;
+  const started = running || finished;
+  return (
+    <div>
+      <div className="mb-4 border-b border-line-soft pb-4">
+        <p className="font-mono text-[13.5px] font-bold text-ink">{state?.instanceName}</p>
+        <p className="mt-0.5 font-mono text-[11px] text-ink-soft">{domain}</p>
+        <div className="mt-2.5">
+          {upToDate && !started ? (
+            <span className="inline-flex items-center gap-1.5 font-mono text-[12px] text-ink">
+              v{state?.deployedVersion}
+              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                latest
+              </span>
+            </span>
+          ) : (
+            <VersionArrow
+              from={state?.deployedVersion ?? null}
+              to={latest}
+            />
+          )}
+        </div>
+        {!started && !upToDate && (
+          <p className="mt-1.5 text-[10px] leading-relaxed text-ink-soft">
+            current version as recorded at your last update
+          </p>
+        )}
+      </div>
+      {started ? (
+        <div className="mb-3">
+          <p className="text-[11px] font-semibold text-ink-soft">
+            {done} of {rows.length} steps
+            {elapsed > 0 && <span className="font-normal"> · {elapsed}s</span>}
+          </p>
+          <div className="mt-1.5 h-[5px] overflow-hidden rounded-full bg-paper-deep">
+            <div
+              className={`h-full rounded-full transition-[width] duration-500 ${finished ? 'bg-emerald-600' : 'bg-accent'}`}
+              style={{ width: `${Math.round((done / Math.max(rows.length, 1)) * 100)}%` }}
+            />
+          </div>
+        </div>
+      ) : (
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-soft">
+          Update plan · {rows.length} steps
+        </p>
+      )}
+      <div>
+        {rows.map(r => (
+          <div
+            key={r.stepId}
+            className={`flex items-center gap-2.5 py-[3px] text-[12px] ${
+              r.status === 'pending'
+                ? 'text-ink-soft/55'
+                : r.status === 'ok'
+                  ? 'text-ink-soft'
+                  : r.status === 'fail'
+                    ? 'font-semibold text-red-700'
+                    : 'font-semibold text-ink'
+            }`}
+          >
+            <RailStepIcon status={r.status} />
+            <span className="min-w-0 truncate">{r.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── flight check ───────────────────────────────────────────────── */
+
+function FlightCheck(): ReactElement {
+  const li = 'flex gap-2 py-[3px] leading-snug';
+  return (
+    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className="rounded-2xl bg-accent-soft px-4 py-3.5 text-[12px] text-[#5c2531]">
+        <p className="mb-2 text-[10px] font-extrabold uppercase tracking-[0.08em] text-accent-deep">
+          This update
+        </p>
+        <p className={li}>
+          <span className="font-bold text-accent-deep">→</span>Redeploys the send, inbound, and
+          dashboard workers
+        </p>
+        <p className={li}>
+          <span className="font-bold text-accent-deep">→</span>Applies any pending database
+          migrations
+        </p>
+        <p className={li}>
+          <span className="font-bold text-accent-deep">→</span>Refreshes dashboard assets
+        </p>
+      </div>
+      <div className="rounded-2xl bg-emerald-50 px-4 py-3.5 text-[12px] text-[#1d4231]">
+        <p className="mb-2 text-[10px] font-extrabold uppercase tracking-[0.08em] text-emerald-700">
+          Untouched
+        </p>
+        <p className={li}>
+          <span className="font-extrabold text-emerald-700">✓</span>Emails, logs, and suppressions
+        </p>
+        <p className={li}>
+          <span className="font-extrabold text-emerald-700">✓</span>API keys and templates
+        </p>
+        <p className={li}>
+          <span className="font-extrabold text-emerald-700">✓</span>Domains and DNS
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ── wizard ─────────────────────────────────────────────────────── */
 
 function UpdateWizard(): ReactElement {
   const { instance: sessionId } = Route.useSearch();
@@ -61,6 +235,7 @@ function UpdateWizard(): ReactElement {
   const [latest, setLatest] = useState<string | null>(null);
   const [steps, setSteps] = useState<StepEvent[]>([]);
   const [result, setResult] = useState<{ apiUrl: string; claimCode?: string } | null>(null);
+  const [elapsed, setElapsed] = useState(0);
   const startedRef = useRef(false);
 
   useEffect(() => {
@@ -105,11 +280,21 @@ function UpdateWizard(): ReactElement {
     })();
   }, [sessionId]);
 
+  // Elapsed ticker while the run is live.
+  useEffect(() => {
+    if (phase !== 'updating') return;
+    const startedAt = Date.now() - elapsed * 1000;
+    const t = window.setInterval(() => setElapsed(Math.round((Date.now() - startedAt) / 1000)), 1000);
+    return () => window.clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
   const runUpdate = async (): Promise<void> => {
     if (!state?.sendingDomain || !state.instanceName) return;
     setBusy(true);
     setError('');
     setSteps([]);
+    setElapsed(0);
     setPhase('updating');
     try {
       const res = await fetch(`/api/deploy/instance/${sessionId}/provision`, {
@@ -147,6 +332,25 @@ function UpdateWizard(): ReactElement {
     : '';
   const upToDate = Boolean(latest && state?.deployedVersion && latest === state.deployedVersion);
 
+  const currentStep = (() => {
+    const rows = collapseSteps(steps);
+    const live = [...rows].reverse().find(r => r.status === 'start' || r.status === 'retry');
+    return live?.label ?? (rows.length ? rows[rows.length - 1].label : 'Starting');
+  })();
+
+  const rail = (
+    <Rail
+      state={state}
+      latest={latest}
+      upToDate={upToDate}
+      steps={steps}
+      running={phase === 'updating'}
+      finished={phase === 'done'}
+      elapsed={elapsed}
+      domain={domain}
+    />
+  );
+
   return (
     <WizardShell
       title="Update Postey"
@@ -176,115 +380,131 @@ function UpdateWizard(): ReactElement {
       )}
 
       {phase === 'connect' && (
-        <Card>
-          <CardTitle
-            title={`Update “${state?.instanceName ?? ''}”`}
-            sub="Connect the account that owns this instance."
-          />
-          <div className="mb-5 space-y-2 rounded-2xl bg-paper px-4 py-3.5 text-[13px] text-ink-soft">
-            <div className="flex items-center justify-between gap-4">
-              <span>Sending domain</span>
-              <span className="font-mono text-ink">{domain}</span>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <span>Version</span>
-              {upToDate ? (
-                <span className="inline-flex items-center gap-1.5 font-mono text-[13px] text-ink">
-                  v{state?.deployedVersion}
-                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10.5px] font-semibold text-emerald-700">
-                    latest
-                  </span>
-                </span>
-              ) : (
-                <VersionArrow from={state?.deployedVersion ?? null} to={latest} />
-              )}
-            </div>
+        <SplitShell rail={rail}>
+          <div className="my-auto">
+            <h2 className="text-[17px] font-semibold tracking-tight text-ink">
+              Connect the account that owns this instance
+            </h2>
+            <p className="mb-5 mt-1 text-[13px] leading-relaxed text-ink-soft">
+              A one-time grant so Postey can redeploy the workers in your account.
+            </p>
+            {error && <ErrorBox>{error}</ErrorBox>}
+            <ConnectSection connect={connect} />
           </div>
-          {error && <ErrorBox>{error}</ErrorBox>}
-          <ConnectSection connect={connect} />
-        </Card>
+        </SplitShell>
       )}
 
       {phase === 'review' && (
-        <Card
-          footer={
-            <>
-              <BackButton onClick={() => setPhase('connect')} />
-              <PrimaryButton onClick={() => void runUpdate()} busy={busy} disabled={!connect.accountId}>
-                {upToDate ? `Re-apply v${latest ?? ''}` : 'Update instance'}
-                <ArrowRight className="h-4 w-4" />
-              </PrimaryButton>
-            </>
-          }
-        >
-          <CardTitle title={upToDate ? 'Already up to date' : 'Ready to update'} />
-          {error && <ErrorBox>{error}</ErrorBox>}
+        <SplitShell rail={rail}>
+          <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-100">
+              <Check className="h-4 w-4 text-emerald-700" strokeWidth={2.4} />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-[12.5px] font-semibold text-ink">
+                {connect.cfEmail ? `Signed in as ${connect.cfEmail}` : 'Access verified'}
+              </p>
+              <p className="text-[10.5px] text-ink-soft">
+                {connect.accounts.find(a => a.id === connect.accountId)?.name ?? 'Account verified'}
+                {connect.installs.some(i => i.instance_name === state?.instanceName)
+                  ? ` · owns ${state?.instanceName}`
+                  : ''}
+              </p>
+            </div>
+          </div>
+
+          <h2 className="mt-5 text-[16.5px] font-semibold tracking-tight text-ink">
+            {upToDate ? 'Already up to date' : 'Ready to update'}
+          </h2>
+          {error && (
+            <div className="mt-3">
+              <ErrorBox>{error}</ErrorBox>
+            </div>
+          )}
           {upToDate ? (
-            <p className="text-[13px] leading-relaxed text-ink-soft">
+            <p className="mt-2 text-[13px] leading-relaxed text-ink-soft">
               <span className="font-mono text-ink">{state?.instanceName}</span> is already on{' '}
               <span className="font-mono text-ink">v{latest}</span>, the latest release. You can
               still re-apply it - useful if a previous update was interrupted or something looks
               off.
             </p>
-          ) : (
-            <p className="text-[13px] leading-relaxed text-ink-soft">
-              Updates <span className="font-mono text-ink">{state?.instanceName}</span>{' '}
-              {state?.deployedVersion ? (
-                <>
-                  from <span className="font-mono text-ink">v{state.deployedVersion}</span>{' '}
-                </>
-              ) : null}
-              {latest ? (
-                <>
-                  to <span className="font-mono font-medium text-accent">v{latest}</span>
-                </>
-              ) : (
-                'to the latest release'
-              )}
-              . A failed update never takes down the running version, and the run resumes safely if
-              interrupted.
-            </p>
-          )}
-          <NoteBox>
-            Worker bundles and D1 migrations ship prebuilt from the release registry - the same
-            model as Traks updates.
-          </NoteBox>
-        </Card>
+          ) : null}
+          <FlightCheck />
+          <p className="mt-3 text-[11.5px] leading-relaxed text-ink-soft">
+            A failed update never takes down the running version, and the run resumes safely if
+            interrupted.
+          </p>
+          <div className="mt-auto flex items-center justify-end gap-3 pt-6">
+            <BackButton onClick={() => setPhase('connect')} />
+            <PrimaryButton onClick={() => void runUpdate()} busy={busy} disabled={!connect.accountId}>
+              {upToDate ? `Re-apply v${latest ?? ''}` : `Update to v${latest ?? 'latest'}`}
+              <ArrowRight className="h-4 w-4" />
+            </PrimaryButton>
+          </div>
+        </SplitShell>
       )}
 
-      {(phase === 'updating' || phase === 'done') && (
-        <div className="space-y-4">
-          <Card
-            footer={
-              phase === 'updating' && error ? (
+      {phase === 'updating' && (
+        <SplitShell rail={rail}>
+          <div className="my-auto">
+            {error ? (
+              <>
+                <ErrorBox>{error}</ErrorBox>
                 <PrimaryButton onClick={() => void runUpdate()} busy={busy}>
                   Retry - resumes where it failed
                 </PrimaryButton>
-              ) : undefined
-            }
-          >
-            <CardTitle
-              title={phase === 'done' ? `Updated to v${latest ?? 'latest'} ✓` : 'Updating…'}
-              sub={phase === 'done' ? undefined : 'Keep this tab open until it finishes.'}
-            />
-            {phase === 'updating' && error && <ErrorBox>{error}</ErrorBox>}
-            <StepList steps={steps} plan={PROVISION_PLAN} />
-          </Card>
-          {phase === 'done' && result && (
-            <Card>
-              <CopyField
-                label="Dashboard"
-                value={result.apiUrl}
-                href={
-                  result.claimCode
-                    ? `${result.apiUrl}/login#claim=${result.claimCode}`
-                    : result.apiUrl
-                }
-                hint="Your instance is serving the new version - data, keys, and settings untouched."
-              />
-            </Card>
-          )}
-        </div>
+              </>
+            ) : (
+              <>
+                <Loader2 className="h-9 w-9 animate-spin text-accent" />
+                <h2 className="mt-4 text-[17px] font-semibold tracking-tight text-ink">
+                  {currentStep}…
+                </h2>
+                <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-soft">
+                  {elapsed}s elapsed · a failed update never takes down the running version.
+                </p>
+                <p className="mt-4 text-[11.5px] text-ink-soft">
+                  Keep this tab open until it finishes.
+                </p>
+              </>
+            )}
+          </div>
+        </SplitShell>
+      )}
+
+      {phase === 'done' && (
+        <SplitShell rail={rail}>
+          <div className="my-auto">
+            <div className="flex items-center gap-3.5">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-100">
+                <Check className="h-5 w-5 text-emerald-700" strokeWidth={2.6} />
+              </span>
+              <div>
+                <h2 className="text-[17.5px] font-semibold tracking-tight text-ink">
+                  Updated to v{latest ?? 'latest'}
+                </h2>
+                <p className="mt-0.5 text-[12px] text-ink-soft">
+                  {elapsed > 0 ? `Finished in ${elapsed}s · ` : ''}data, keys, and settings
+                  untouched.
+                </p>
+              </div>
+            </div>
+            {result && (
+              <div className="mt-5">
+                <CopyField
+                  label="Dashboard"
+                  value={result.apiUrl}
+                  href={
+                    result.claimCode
+                      ? `${result.apiUrl}/login#claim=${result.claimCode}`
+                      : result.apiUrl
+                  }
+                  hint="Serving the new version already - nothing else to do."
+                />
+              </div>
+            )}
+          </div>
+        </SplitShell>
       )}
     </WizardShell>
   );
