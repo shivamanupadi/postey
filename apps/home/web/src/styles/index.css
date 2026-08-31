@@ -1,18 +1,22 @@
 @import 'tailwindcss';
 
+/* OpenSEO-style warm-cream theme with a Neon Coral primary.
+ * Neutrals are shared with the platform dashboard - keep in sync. */
 @theme {
-  --color-paper: #faf6ee;
-  --color-paper-deep: #f2ecdf;
-  --color-ink: #2e2c3a;
-  --color-ink-deep: #232130;
-  --color-ink-soft: #6b6878;
-  --color-line: #e5ddcb;
-  --color-cream: #f4f0e6;
-  --color-accent: #f07818;
-  --color-accent-deep: #d5640c;
-  --color-accent-soft: #ffe9d2;
+  --color-paper: #f5f1ec; /* page ground */
+  --color-paper-deep: #eee8de; /* alternating band */
+  --color-paper-deeper: #e3dccd; /* strongest band (testimonial-style) */
+  --color-ink: #111111;
+  --color-ink-deep: #221f1b; /* terminal / dark band */
+  --color-ink-soft: #64615c;
+  --color-line: #d8d1c8;
+  --color-line-soft: #e7e1d8;
+  --color-cream: #f2efe9; /* text on dark */
+  --color-accent: #ff4d6d; /* Neon Coral */
+  --color-accent-deep: #e63757;
+  --color-accent-soft: #ffe8ed;
 
-  --font-display: 'Fraunces', ui-serif, Georgia, serif;
+  --font-display: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
@@ -21,6 +25,17 @@ html {
   scroll-behavior: smooth;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
 body {
   @apply bg-paper text-ink font-sans antialiased;
+}
+
+/* Big display headlines: Inter medium, tightly tracked (openseo treatment). */
+.display {
+  @apply font-medium tracking-[-0.028em];
 }

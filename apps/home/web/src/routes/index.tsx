@@ -1,5 +1,6 @@
 import type { ReactElement, ReactNode } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
+import { SiteChrome } from '../site/chrome';
 import {
   CalendarClock,
   Database,
@@ -151,22 +152,28 @@ function SectionTitle({
   title,
   body,
   light = false,
+  align = 'center',
 }: {
   kicker: string;
   title: string;
   body?: string;
   light?: boolean;
+  align?: 'center' | 'left';
 }): ReactElement {
   return (
-    <div className="mx-auto max-w-2xl text-center">
-      <p className="text-sm font-semibold uppercase tracking-widest text-accent">{kicker}</p>
+    <div className={align === 'center' ? 'mx-auto max-w-2xl text-center' : 'max-w-2xl'}>
+      <p className={`text-[15px] font-medium ${light ? 'text-[#ff8fa3]' : 'text-accent'}`}>
+        {kicker}
+      </p>
       <h2
-        className={`mt-3 font-display text-3xl font-semibold tracking-tight sm:text-4xl ${light ? 'text-cream' : 'text-ink'}`}
+        className={`display mt-3 text-balance font-display text-4xl sm:text-[44px] sm:leading-[1.08] ${light ? 'text-cream' : 'text-ink'}`}
       >
         {title}
       </h2>
       {body ? (
-        <p className={`mt-4 text-base leading-relaxed ${light ? 'text-cream/70' : 'text-ink-soft'}`}>
+        <p
+          className={`mt-5 text-[17px] leading-relaxed ${light ? 'text-cream/70' : 'text-ink-soft'}`}
+        >
           {body}
         </p>
       ) : null}
@@ -176,20 +183,22 @@ function SectionTitle({
 
 function CodeBlock(): ReactElement {
   return (
-    <div className="overflow-hidden rounded-2xl border border-line bg-ink-deep shadow-xl">
+    <div className="overflow-hidden rounded-2xl bg-ink-deep shadow-[0_24px_48px_-20px_rgba(30,25,18,0.35)]">
       <div className="flex items-center gap-1.5 border-b border-white/10 px-4 py-3">
-        <span className="h-2.5 w-2.5 rounded-full bg-white/20" />
-        <span className="h-2.5 w-2.5 rounded-full bg-white/20" />
-        <span className="h-2.5 w-2.5 rounded-full bg-white/20" />
-        <span className="ml-3 font-mono text-xs text-cream/50">already on Resend? just change two lines</span>
+        <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+        <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+        <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+        <span className="ml-3 font-mono text-xs text-cream/50">
+          already on Resend? just change two lines
+        </span>
       </div>
       <pre className="overflow-x-auto p-5 font-mono text-[13px] leading-relaxed text-cream/90">
         <code>
           {`curl `}
-          <span className="text-accent">https://mail.yourdomain.com</span>
+          <span className="text-[#ff8fa3]">https://mail.yourdomain.com</span>
           {`/api/emails \\
   -H "Authorization: Bearer `}
-          <span className="text-accent">pk_live_…</span>
+          <span className="text-[#ff8fa3]">pk_live_…</span>
           {`" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -211,55 +220,80 @@ function CodeBlock(): ReactElement {
 
 function Landing(): ReactElement {
   return (
-    <main>
-      {/* Hero */}
-      <section className="relative overflow-hidden">
-        <div className="mx-auto grid max-w-6xl items-center gap-12 px-5 pb-20 pt-16 lg:grid-cols-2 lg:pt-24">
+    <SiteChrome>
+      <main>
+      {/* Hero — centered, openseo-style */}
+      <section className="px-5 pb-24 pt-20 text-center sm:pt-28">
+        <div className="mx-auto max-w-4xl">
+          <span className="inline-flex items-center gap-2 rounded-full border border-line bg-white/55 px-3.5 py-1.5 text-[13px] font-medium text-ink-soft">
+            <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+            Public beta · built on Cloudflare Email Service
+          </span>
+          <h1 className="display mx-auto mt-8 max-w-[16ch] text-balance font-display text-5xl leading-[1.05] text-ink sm:text-6xl lg:text-[72px]">
+            The email platform you actually own.
+          </h1>
+          <p className="mx-auto mt-7 max-w-xl text-lg leading-relaxed text-ink-soft">
+            Postey installs a complete transactional email platform — API, logs, templates,
+            suppressions, webhooks — into your own Cloudflare account. No middleman, no
+            per-subscriber pricing, no data leaving your infrastructure.
+          </p>
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
+            <a
+              href="/deploy"
+              className="group rounded-[10px] bg-ink px-7 py-3.5 text-[17px] font-medium text-white transition hover:bg-black"
+            >
+              Deploy to Cloudflare{' '}
+              <span className="inline-block transition-transform group-hover:translate-x-0.5">
+                →
+              </span>
+            </a>
+            <a
+              href="#features"
+              className="rounded-[10px] border border-line bg-white px-7 py-3.5 text-[17px] font-medium text-ink transition hover:bg-paper-deep/40"
+            >
+              Explore the scope
+            </a>
+          </div>
+          <p className="mt-6 font-mono text-xs text-ink-soft">
+            $5/mo Workers plan · 3,000 emails included · then $0.35 per 1,000
+          </p>
+        </div>
+      </section>
+
+      {/* API split band */}
+      <section className="border-y border-line-soft bg-paper-deep">
+        <div className="mx-auto grid max-w-6xl items-center gap-12 px-5 py-24 lg:grid-cols-[5fr_6fr]">
           <div>
-            <span className="inline-flex items-center gap-2 rounded-full border border-line bg-paper-deep px-3 py-1 text-xs font-medium text-ink-soft">
-              <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-              Public beta · built on Cloudflare Email Service
-            </span>
-            <h1 className="mt-6 font-display text-4xl font-semibold leading-[1.1] tracking-tight text-ink sm:text-5xl lg:text-[3.4rem]">
-              Email infrastructure that lives in{' '}
-              <span className="text-accent">your</span> Cloudflare account.
-            </h1>
-            <p className="mt-6 max-w-xl text-lg leading-relaxed text-ink-soft">
-              Postey installs a complete transactional email platform — API, logs, templates,
-              suppressions, webhooks — into your own account. No middleman, no per-subscriber
-              pricing, no data leaving your infrastructure.
-            </p>
-            <div className="mt-8 flex flex-wrap items-center gap-4">
-              <a
-                href="/deploy"
-                className="rounded-full bg-accent px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/25 transition hover:bg-accent-deep"
-              >
-                Deploy to Cloudflare
-              </a>
-              <a
-                href="#features"
-                className="rounded-full border border-line bg-paper px-6 py-3 text-sm font-semibold text-ink transition hover:border-ink-soft"
-              >
-                Explore the scope
-              </a>
+            <SectionTitle
+              align="left"
+              kicker="Resend-compatible API"
+              title="Keep your SDK. Change one URL."
+              body="Postey speaks the same REST dialect your code already does. Point your existing client at your own domain and every send flows through Workers you control."
+            />
+            <div className="mt-7 flex flex-wrap gap-2.5">
+              {['node', 'python', 'go', 'curl', 'rest'].map(s => (
+                <span
+                  key={s}
+                  className="rounded-lg border border-line bg-white/60 px-2.5 py-1 font-mono text-xs text-ink-soft"
+                >
+                  {s}
+                </span>
+              ))}
             </div>
-            <p className="mt-6 font-mono text-xs text-ink-soft">
-              $5/mo Workers plan · 3,000 emails included · then $0.35 per 1,000
-            </p>
           </div>
           <CodeBlock />
         </div>
       </section>
 
       {/* Install steps */}
-      <section id="deploy" className="border-y border-line bg-paper-deep py-20">
+      <section id="deploy" className="py-24">
         <div className="mx-auto max-w-6xl px-5">
           <SectionTitle
             kicker="Install"
             title="Yours in about five minutes"
             body="The deploy wizard provisions everything into your account — the same model that powers Traks installs."
           />
-          <div className="mt-12 grid gap-6 md:grid-cols-3">
+          <div className="mt-12 grid gap-5 md:grid-cols-3">
             {[
               {
                 n: '01',
@@ -276,10 +310,15 @@ function Landing(): ReactElement {
                 title: 'Send',
                 body: 'The wizard detects your DNS going live, fires a free verification send, and hands you an API key. Point your app at your new instance.',
               },
-            ].map((s) => (
-              <div key={s.n} className="rounded-2xl border border-line bg-paper p-6">
+            ].map(s => (
+              <div
+                key={s.n}
+                className="rounded-2xl border border-line-soft bg-white p-6 shadow-[0_1px_2px_rgba(30,25,18,0.04)]"
+              >
                 <p className="font-mono text-sm font-medium text-accent">{s.n}</p>
-                <h3 className="mt-3 font-display text-xl font-semibold text-ink">{s.title}</h3>
+                <h3 className="mt-3 font-display text-xl font-semibold tracking-tight text-ink">
+                  {s.title}
+                </h3>
                 <p className="mt-2 text-sm leading-relaxed text-ink-soft">{s.body}</p>
               </div>
             ))}
@@ -288,18 +327,18 @@ function Landing(): ReactElement {
       </section>
 
       {/* v1 features */}
-      <section id="features" className="py-20">
+      <section id="features" className="border-t border-line-soft bg-paper-deep py-24">
         <div className="mx-auto max-w-6xl px-5">
           <SectionTitle
             kicker="v1 · Transactional"
             title="Everything the raw API doesn't give you"
             body="Cloudflare Email Service delivers the mail, signs DKIM, and manages IP reputation. Postey adds the product layer around it."
           />
-          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {V1_FEATURES.map((f) => (
+          <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {V1_FEATURES.map(f => (
               <div
                 key={f.title}
-                className="group rounded-2xl border border-line bg-paper p-6 transition hover:border-accent/50 hover:shadow-md"
+                className="rounded-2xl border border-line-soft bg-white p-6 shadow-[0_1px_2px_rgba(30,25,18,0.04)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_24px_-12px_rgba(30,25,18,0.18)]"
               >
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-soft text-accent [&_svg]:h-5 [&_svg]:w-5">
                   {f.icon}
@@ -312,8 +351,8 @@ function Landing(): ReactElement {
         </div>
       </section>
 
-      {/* Newsletters roadmap */}
-      <section id="newsletters" className="bg-ink py-20">
+      {/* Newsletters roadmap — dark band */}
+      <section id="newsletters" className="bg-ink-deep py-24">
         <div className="mx-auto max-w-6xl px-5">
           <SectionTitle
             light
@@ -321,8 +360,8 @@ function Landing(): ReactElement {
             title="Newsletters without the subscriber tax"
             body="Hosted platforms bill by list size: 10,000 subscribers runs $109/mo on beehiiv and $139/mo on Kit — while the actual sending costs a few dollars. Postey bills you nothing; you pay only provider usage."
           />
-          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {V2_FEATURES.map((f) => (
+          <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {V2_FEATURES.map(f => (
               <div key={f.title} className="rounded-2xl border border-white/10 bg-white/5 p-6">
                 <h3 className="text-base font-semibold text-cream">{f.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-cream/60">{f.body}</p>
@@ -330,21 +369,21 @@ function Landing(): ReactElement {
             ))}
           </div>
           <p className="mt-10 text-center font-mono text-sm text-cream/50">
-            10,000 subscribers × 4 sends/mo ≈ <span className="text-accent">$19/mo</span> in usage —
-            vs $109–139/mo hosted
+            10,000 subscribers × 4 sends/mo ≈ <span className="text-[#ff8fa3]">$19/mo</span> in
+            usage — vs $109–139/mo hosted
           </p>
         </div>
       </section>
 
       {/* Architecture */}
-      <section id="architecture" className="border-b border-line py-20">
+      <section id="architecture" className="py-24">
         <div className="mx-auto max-w-6xl px-5">
           <SectionTitle
             kicker="Architecture"
             title="Four workers, zero servers"
             body="Everything runs on Cloudflare primitives inside your account — the same hot/cold data design proven in Traks."
           />
-          <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-12 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             {[
               {
                 name: 'send',
@@ -366,8 +405,11 @@ function Landing(): ReactElement {
                 role: 'Email Routing handler',
                 body: 'Catches replies and unsubscribe mail via the email() handler; forwards, webhooks, or suppresses.',
               },
-            ].map((w) => (
-              <div key={w.name} className="rounded-2xl border border-line bg-paper-deep p-6">
+            ].map(w => (
+              <div
+                key={w.name}
+                className="rounded-2xl border border-line-soft bg-white p-6 shadow-[0_1px_2px_rgba(30,25,18,0.04)]"
+              >
                 <p className="font-mono text-sm font-semibold text-accent">{w.name}</p>
                 <p className="mt-1 text-xs font-medium uppercase tracking-wide text-ink-soft">
                   {w.role}
@@ -380,16 +422,16 @@ function Landing(): ReactElement {
       </section>
 
       {/* Pricing */}
-      <section id="pricing" className="py-20">
+      <section id="pricing" className="border-t border-line-soft bg-paper-deep py-24">
         <div className="mx-auto max-w-4xl px-5">
           <SectionTitle
             kicker="Pricing"
             title="Postey is software, not a middleman"
             body="The platform is yours to run. You pay Cloudflare for usage — nothing to us per email, per subscriber, or per seat."
           />
-          <div className="mt-12 overflow-hidden rounded-2xl border border-line">
+          <div className="mt-12 overflow-hidden rounded-2xl border border-line-soft bg-white shadow-[0_1px_2px_rgba(30,25,18,0.04)]">
             <table className="w-full text-left text-sm">
-              <thead className="bg-paper-deep text-xs uppercase tracking-wide text-ink-soft">
+              <thead className="border-b border-line-soft text-xs uppercase tracking-wide text-ink-soft">
                 <tr>
                   <th className="px-5 py-4 font-semibold">Transactional volume</th>
                   <th className="px-5 py-4 font-semibold text-accent">Postey (CF usage)</th>
@@ -397,8 +439,8 @@ function Landing(): ReactElement {
                   <th className="px-5 py-4 font-semibold">Postmark</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-line bg-paper">
-                {PRICING_ROWS.map((r) => (
+              <tbody className="divide-y divide-line-soft">
+                {PRICING_ROWS.map(r => (
                   <tr key={r.volume}>
                     <td className="px-5 py-4 font-medium text-ink">{r.volume}</td>
                     <td className="px-5 py-4 font-mono font-semibold text-accent">{r.postey}</td>
@@ -418,14 +460,14 @@ function Landing(): ReactElement {
       </section>
 
       {/* FAQ */}
-      <section id="faq" className="border-t border-line bg-paper-deep py-20">
+      <section id="faq" className="py-24">
         <div className="mx-auto max-w-3xl px-5">
           <SectionTitle kicker="FAQ" title="The honest fine print" />
           <div className="mt-10 space-y-3">
-            {FAQ.map((item) => (
+            {FAQ.map(item => (
               <details
                 key={item.q}
-                className="group rounded-xl border border-line bg-paper px-5 py-4 open:shadow-sm"
+                className="group rounded-xl border border-line-soft bg-white px-5 py-4 open:shadow-sm"
               >
                 <summary className="cursor-pointer list-none text-sm font-semibold text-ink marker:hidden">
                   {item.q}
@@ -438,10 +480,10 @@ function Landing(): ReactElement {
       </section>
 
       {/* CTA */}
-      <section className="py-20">
+      <section className="border-t border-line-soft bg-paper-deep py-24">
         <div className="mx-auto max-w-3xl px-5 text-center">
           <img src="/logo.svg" alt="" className="mx-auto h-14 w-14" />
-          <h2 className="mt-6 font-display text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
+          <h2 className="display mt-6 text-balance font-display text-4xl text-ink sm:text-[44px]">
             Own your email. All of it.
           </h2>
           <p className="mt-4 text-base text-ink-soft">
@@ -449,12 +491,14 @@ function Landing(): ReactElement {
           </p>
           <a
             href="/deploy"
-            className="mt-8 inline-block rounded-full bg-accent px-8 py-3.5 text-sm font-semibold text-white shadow-lg shadow-accent/25 transition hover:bg-accent-deep"
+            className="group mt-9 inline-block rounded-[10px] bg-ink px-8 py-3.5 text-[17px] font-medium text-white transition hover:bg-black"
           >
-            Deploy to Cloudflare
+            Deploy to Cloudflare{' '}
+            <span className="inline-block transition-transform group-hover:translate-x-0.5">→</span>
           </a>
         </div>
       </section>
-    </main>
+      </main>
+    </SiteChrome>
   );
 }

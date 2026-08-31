@@ -1,16 +1,18 @@
-import { useEffect, useState, type ReactElement } from 'react';
-import { createFileRoute } from '@tanstack/react-router';
+import { useEffect, useRef, useState, type ReactElement } from 'react';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import {
-  ConnectPanel,
-  ErrorNote,
-  Panel,
-  PrimaryButton,
+  BackButton,
+  Card,
+  CardTitle,
+  ConnectSection,
+  DangerButton,
+  DESTROY_PLAN,
+  ErrorBox,
   readSse,
   StepList,
-  TextInput,
+  useConnect,
+  WizardShell,
   wizardApi,
-  type Account,
-  type Install,
   type ResumeState,
   type StepEvent,
 } from '../deploy/shared';
@@ -21,106 +23,89 @@ export const Route = createFileRoute('/destroy')({
     typeof s.instance === 'string' ? { instance: s.instance } : {},
 });
 
-type Screen = 'loading' | 'connect' | 'confirm' | 'progress' | 'done' | 'no-session';
+type Phase = 'loading' | 'no-session' | 'connect' | 'confirm' | 'destroying' | 'done';
+
+const PHASE_INDEX: Record<Phase, number> = {
+  loading: 0,
+  'no-session': 0,
+  connect: 0,
+  confirm: 1,
+  destroying: 2,
+  done: 2,
+};
+
+const inputClass =
+  'h-11 w-full rounded-2xl border-none bg-white px-4 text-[13.5px] text-ink shadow-[inset_0_0_0_1px_#d8d1c8] transition-shadow placeholder:text-ink-soft/50 focus:shadow-[inset_0_0_0_1.5px_#dc2626] focus:outline-none';
 
 function DestroyWizard(): ReactElement {
-  const { instance } = Route.useSearch();
-  const [screen, setScreen] = useState<Screen>('loading');
-  const [error, setError] = useState<string | null>(null);
-  const [oauthEnabled, setOauthEnabled] = useState(false);
+  const { instance: sessionId } = Route.useSearch();
+  const navigate = useNavigate();
+  const connect = useConnect('destroy', sessionId);
+
+  const [phase, setPhase] = useState<Phase>('loading');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   const [state, setState] = useState<ResumeState | null>(null);
-  const [apiToken, setApiToken] = useState('');
-  const [accountId, setAccountId] = useState('');
-  const [accounts, setAccounts] = useState<Account[]>([]);
   const [confirmName, setConfirmName] = useState('');
   const [steps, setSteps] = useState<StepEvent[]>([]);
   const [retained, setRetained] = useState<{ bucket: string; reason: string } | null>(null);
+  const startedRef = useRef(false);
 
   useEffect(() => {
-    void fetch('/api/config')
-      .then(r => r.json() as Promise<{ oauthEnabled?: boolean }>)
-      .then(cfg => setOauthEnabled(Boolean(cfg.oauthEnabled)))
-      .catch(() => undefined);
-  }, []);
+    if (connect.oauthError) setError(connect.oauthError);
+  }, [connect.oauthError]);
 
   useEffect(() => {
-    if (!instance) {
-      setScreen('no-session');
+    if (phase !== 'connect' || connect.tokenStatus !== 'ok') return;
+    const owning = connect.installs.find(i => i.instance_name === state?.instanceName);
+    if (owning) connect.setAccountId(owning.account_id);
+    setPhase('confirm');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connect.tokenStatus, phase]);
+
+  useEffect(() => {
+    if (!sessionId) {
+      setPhase('no-session');
       return;
     }
-    let cancelled = false;
+    if (startedRef.current) return;
+    startedRef.current = true;
     void (async () => {
       try {
-        const s = await wizardApi<ResumeState>(`/instance/${instance}`);
-        if (cancelled) return;
+        const s = await wizardApi<ResumeState>(`/instance/${sessionId}`);
         if (!s.instanceName) {
-          setScreen('no-session');
+          setPhase('no-session');
           return;
         }
         setState(s);
-        setScreen(s.status === 'destroyed' ? 'done' : 'connect');
-        const token = new URLSearchParams(window.location.hash.slice(1)).get('cf_token');
-        const oerr = new URLSearchParams(window.location.search).get('oauth_error');
-        if (oerr) setError(`Cloudflare sign-in failed: ${oerr}`);
-        if (token) {
-          window.history.replaceState(null, '', window.location.pathname + window.location.search);
-          setApiToken(token);
-          void connect(token, s);
-        }
+        setPhase(s.status === 'destroyed' ? 'done' : 'connect');
       } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'failed to load session');
-          setScreen('no-session');
-        }
+        setError(err instanceof Error ? err.message : 'failed to load session');
+        setPhase('no-session');
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [instance]);
+  }, [sessionId]);
 
-  async function connect(token?: string, loaded?: ResumeState): Promise<void> {
-    const useToken = token ?? apiToken;
-    const s = loaded ?? state;
-    setError(null);
-    try {
-      const res = await fetch(`/api/deploy/instance/${instance}/accounts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiToken: useToken }),
-      });
-      const data = (await res.json()) as { data?: Account[]; installs?: Install[]; error?: string };
-      if (!res.ok) throw new Error(data.error ?? 'token check failed');
-      const list = data.data ?? [];
-      setAccounts(list);
-      const owning = (data.installs ?? []).find(i => i.instance_name === s?.instanceName);
-      setAccountId(owning?.account_id ?? (list.length === 1 ? list[0].id : ''));
-      setScreen('confirm');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'token check failed');
-    }
-  }
-
-  async function runDestroy(): Promise<void> {
+  const runDestroy = async (): Promise<void> => {
     if (!state?.instanceName) return;
-    setError(null);
+    setBusy(true);
+    setError('');
     setSteps([]);
-    setScreen('progress');
+    setPhase('destroying');
     try {
-      const res = await fetch(`/api/deploy/instance/${instance}/destroy`, {
+      const res = await fetch(`/api/deploy/instance/${sessionId}/destroy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          apiToken,
-          accountId,
+          apiToken: connect.token.trim(),
+          accountId: connect.accountId,
           instanceName: state.instanceName,
           confirmName,
         }),
       });
       if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(data?.error ?? `destroy failed (${res.status})`);
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? `destroy failed (${res.status})`);
       }
       await readSse(res, payload => {
         if (payload.type === 'step') setSteps(prev => [...prev, payload as unknown as StepEvent]);
@@ -131,123 +116,163 @@ function DestroyWizard(): ReactElement {
               reason: String(payload.retainedReason ?? ''),
             });
           }
-          setScreen('done');
+          setPhase('done');
         } else if (payload.type === 'error') setError(String(payload.message));
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'destroy failed');
+    } finally {
+      setBusy(false);
     }
-  }
+  };
+
+  const name = state?.instanceName ?? '';
 
   return (
-    <main className="mx-auto max-w-2xl px-5 py-14">
-      <h1 className="font-display text-3xl font-semibold text-ink">Destroy Postey</h1>
-      <p className="mt-2 text-sm leading-relaxed text-ink-soft">
-        Tears down everything the wizard provisioned: workers, the queue, the database, and the
-        bodies bucket. <strong className="text-red-700">This deletes your email history</strong> -
-        there is no undo.
-      </p>
+    <WizardShell
+      title="Destroy Postey"
+      subtitle="Removes the instance from your Cloudflare account - no undo"
+      progress={{ current: PHASE_INDEX[phase], total: 3 }}
+      danger
+    >
+      {phase === 'loading' && (
+        <Card>
+          <p className="text-[13px] text-ink-soft">Loading session…</p>
+        </Card>
+      )}
 
-      <div className="mt-8 space-y-6">
-        {screen === 'loading' && <p className="text-sm text-ink-soft">Loading session…</p>}
+      {phase === 'no-session' && (
+        <Card
+          footer={
+            <BackButton onClick={() => void navigate({ to: '/' })} label="Back to postey.app" />
+          }
+        >
+          <CardTitle title="No instance session" />
+          {error && <ErrorBox>{error}</ErrorBox>}
+          <p className="text-[13px] leading-relaxed text-ink-soft">
+            Open this page from your instance link - the same id as your deploy URL:{' '}
+            <code className="font-mono text-[12px]">/destroy?instance=&lt;id&gt;</code>.
+          </p>
+        </Card>
+      )}
 
-        {screen === 'no-session' && (
-          <Panel title="No instance session">
-            <p className="text-sm leading-relaxed text-ink-soft">
-              Open this page from your deploy link:{' '}
-              <code className="font-mono">/destroy?instance=&lt;id&gt;</code>.
-            </p>
-            <ErrorNote error={error} />
-          </Panel>
-        )}
-
-        {screen === 'connect' && (
-          <ConnectPanel
-            instance={instance}
-            flow="destroy"
-            oauthEnabled={oauthEnabled}
-            apiToken={apiToken}
-            setApiToken={setApiToken}
-            onContinue={() => void connect()}
-            error={error}
+      {phase === 'connect' && (
+        <Card>
+          <CardTitle
+            title={`Destroy “${name}”`}
+            sub="Connect the account that owns this instance. You'll confirm on the next screen before anything is touched."
           />
-        )}
+          {error && <ErrorBox>{error}</ErrorBox>}
+          <ConnectSection connect={connect} />
+        </Card>
+      )}
 
-        {screen === 'confirm' && (
-          <Panel title="2 · Confirm">
-            {accounts.length > 1 && (
-              <label className="mb-4 block">
-                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-soft">
-                  Account
-                </span>
-                <select
-                  className="w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-sm"
-                  value={accountId}
-                  onChange={e => setAccountId(e.target.value)}
-                >
-                  <option value="">Pick the account that owns {state?.instanceName}</option>
-                  {accounts.map(a => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            <p className="text-sm text-ink-soft">
-              Type <code className="font-mono text-ink">{state?.instanceName}</code> to confirm the
-              teardown:
-            </p>
-            <div className="mt-3 flex gap-3">
-              <TextInput
-                value={confirmName}
-                onChange={e => setConfirmName(e.target.value)}
-                placeholder={state?.instanceName ?? ''}
-              />
-              <PrimaryButton
-                danger
+      {phase === 'confirm' && (
+        <Card
+          footer={
+            <>
+              <BackButton onClick={() => setPhase('connect')} />
+              <DangerButton
                 onClick={() => void runDestroy()}
-                disabled={!accountId || confirmName !== state?.instanceName}
+                busy={busy}
+                disabled={!connect.accountId || confirmName !== name}
               >
-                Destroy
-              </PrimaryButton>
-            </div>
-            <ErrorNote error={error} />
-          </Panel>
-        )}
-
-        {(screen === 'progress' || (screen === 'done' && steps.length > 0)) && (
-          <Panel title="3 · Tearing down">
-            <StepList steps={steps} />
-            {screen === 'progress' && error && (
-              <>
-                <ErrorNote error={error} />
-                <div className="mt-3">
-                  <PrimaryButton danger onClick={() => void runDestroy()}>
-                    Retry teardown
-                  </PrimaryButton>
-                </div>
-              </>
-            )}
-          </Panel>
-        )}
-
-        {screen === 'done' && (
-          <Panel title="Instance destroyed">
-            <p className="text-sm text-ink-soft">
-              All provisioned resources for{' '}
-              <code className="font-mono text-ink">{state?.instanceName}</code> have been removed.
-            </p>
-            {retained && (
-              <p className="mt-3 rounded-xl border border-accent/40 bg-accent-soft px-4 py-2.5 text-xs text-accent-deep">
-                The bucket <code className="font-mono">{retained.bucket}</code> was kept:{' '}
-                {retained.reason} It keeps costing R2 storage until removed in the Cloudflare
-                dashboard.
+                Destroy forever
+              </DangerButton>
+            </>
+          }
+        >
+          <CardTitle
+            title="This deletes your email history"
+            sub="Read what goes before typing the name."
+          />
+          {error && <ErrorBox>{error}</ErrorBox>}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl bg-red-50 p-4 ring-1 ring-red-100">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-red-800">
+                Deleted permanently
               </p>
-            )}
-          </Panel>
-        )}
-      </div>
-    </main>
+              <ul className="mt-2.5 space-y-1.5 text-[12.5px] leading-relaxed text-red-900/80">
+                <li>· 3 workers (send, dashboard, inbound)</li>
+                <li>· 2 queues + the delivery-event subscription</li>
+                <li>· D1 database - email log, templates, keys, suppressions</li>
+                <li>· R2 bucket - stored email bodies</li>
+              </ul>
+            </div>
+            <div className="rounded-2xl bg-paper p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">
+                Left untouched
+              </p>
+              <ul className="mt-2.5 space-y-1.5 text-[12.5px] leading-relaxed text-ink-soft">
+                <li>· Your domain and its DNS records</li>
+                <li>· Email Sending onboarding on the zone</li>
+                <li>· Your Workers plan and billing</li>
+                <li>· Everything else in your account</li>
+              </ul>
+            </div>
+          </div>
+          <div className="mt-5">
+            <label htmlFor="confirm-name" className="mb-1.5 block text-[12.5px] font-semibold text-ink">
+              Type <code className="font-mono">{name}</code> to confirm
+            </label>
+            <input
+              id="confirm-name"
+              value={confirmName}
+              onChange={e => setConfirmName(e.target.value)}
+              placeholder={name}
+              autoComplete="off"
+              className={inputClass}
+            />
+          </div>
+        </Card>
+      )}
+
+      {(phase === 'destroying' || phase === 'done') && (
+        <Card
+          footer={
+            phase === 'destroying' && error ? (
+              <DangerButton onClick={() => void runDestroy()} busy={busy}>
+                Retry teardown
+              </DangerButton>
+            ) : phase === 'done' ? (
+              <BackButton onClick={() => void navigate({ to: '/' })} label="Back to postey.app" />
+            ) : undefined
+          }
+        >
+          <CardTitle
+            title={phase === 'done' ? 'Instance destroyed' : 'Tearing down…'}
+            sub={
+              phase === 'done'
+                ? 'Your domain, DNS, and the rest of your Cloudflare account are untouched.'
+                : undefined
+            }
+          />
+          {phase === 'destroying' && error && <ErrorBox>{error}</ErrorBox>}
+          {(phase === 'destroying' || steps.length > 0) && (
+            <StepList steps={steps} plan={DESTROY_PLAN} />
+          )}
+          {phase === 'done' && retained && (
+            <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-[12.5px] leading-relaxed text-amber-900 ring-1 ring-amber-200">
+              One thing needs your attention: the bucket{' '}
+              <code className="font-mono font-medium">{retained.bucket}</code> was kept -{' '}
+              {retained.reason} It keeps costing R2 storage until you remove it in the Cloudflare
+              dashboard (R2 → {retained.bucket} → Settings → Delete).
+            </p>
+          )}
+          {phase === 'done' && (
+            <p className="mt-4 text-[13px] text-ink-soft">
+              Changed your mind?{' '}
+              <a
+                href="/deploy"
+                className="font-semibold text-accent underline decoration-accent/40 underline-offset-2"
+              >
+                Deploy a fresh instance
+              </a>{' '}
+              any time.
+            </p>
+          )}
+        </Card>
+      )}
+    </WizardShell>
   );
 }
