@@ -1,4 +1,5 @@
-import type { ReactElement, ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
+import { Check, ChevronDown } from 'lucide-react';
 import { STATUS_COLORS } from './api';
 
 /** Consistent page header: title, optional one-line description, action slot. */
@@ -117,6 +118,92 @@ export function Field({ label, children }: { label: string; children: ReactNode 
   );
 }
 
+export interface DropdownOption<T extends string> {
+  value: T;
+  label: string;
+  /** Small right-aligned annotation (a count, a domain, …). */
+  hint?: string;
+}
+
+/** Filter dropdown: a labeled trigger with a popover listbox. Closes on
+ *  outside click, Escape, or selection. */
+export function Dropdown<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  /** Prefix shown before the selected value, e.g. "Domain". */
+  label?: string;
+  value: T;
+  options: DropdownOption<T>[];
+  onChange: (v: T) => void;
+}): ReactElement {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const selected = options.find(o => o.value === value) ?? options[0];
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent): void => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`flex items-center gap-1.5 whitespace-nowrap rounded-[10px] border px-3 py-2 text-[13px] font-medium transition ${
+          open ? 'border-accent/50 bg-card text-ink ring-2 ring-accent/15' : 'border-line bg-card text-ink hover:bg-paper'
+        }`}
+      >
+        {label && <span className="font-normal text-ink-soft">{label}</span>}
+        {selected?.label}
+        <ChevronDown className={`h-3.5 w-3.5 text-ink-soft transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div
+          role="listbox"
+          className="absolute right-0 top-[calc(100%+6px)] z-30 min-w-[180px] rounded-xl border border-line-soft bg-card p-1.5 shadow-[0_16px_40px_-12px_rgba(30,25,18,0.25)]"
+        >
+          {options.map(o => (
+            <button
+              key={o.value}
+              type="button"
+              role="option"
+              aria-selected={o.value === value}
+              onClick={() => {
+                onChange(o.value);
+                setOpen(false);
+              }}
+              className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition ${
+                o.value === value ? 'font-semibold text-ink' : 'text-ink-soft hover:bg-paper hover:text-ink'
+              }`}
+            >
+              <span className="min-w-0 flex-1 truncate">{o.label}</span>
+              {o.hint && <span className="font-mono text-[10.5px] text-ink-soft/70">{o.hint}</span>}
+              {o.value === value && <Check className="h-3.5 w-3.5 shrink-0 text-accent" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Small pill switcher (body view, snippet language, …). */
 export function Segmented<T extends string>({
   options,
@@ -148,9 +235,12 @@ export function Segmented<T extends string>({
 export function Table({
   head,
   children,
+  foot,
 }: {
   head: string[];
   children: ReactNode;
+  /** Optional footer row inside the card (pagination, totals). */
+  foot?: ReactNode;
 }): ReactElement {
   return (
     <div className="overflow-x-auto rounded-2xl border border-line-soft bg-card shadow-[0_1px_2px_rgba(30,25,18,0.04)]">
@@ -169,6 +259,11 @@ export function Table({
         </thead>
         <tbody className="divide-y divide-[#efe8dc]">{children}</tbody>
       </table>
+      {foot && (
+        <div className="flex items-center justify-between gap-3 border-t border-line-soft px-4 py-2.5 text-xs text-ink-soft">
+          {foot}
+        </div>
+      )}
     </div>
   );
 }

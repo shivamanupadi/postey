@@ -78,20 +78,58 @@ app.get('/overview', async c => {
   });
 });
 
+/** Shared filter clauses for the email log ('m.'-prefixed columns). */
+function messageFilters(c: { req: { query: (k: string) => string | undefined } }): {
+  where: string[];
+  binds: unknown[];
+} {
+  const where: string[] = [];
+  const binds: unknown[] = [];
+  const after = Number(c.req.query('after') ?? 0);
+  if (after > 0) {
+    where.push('m.created_at > ?');
+    binds.push(after);
+  }
+  const domainId = c.req.query('domain_id');
+  if (domainId) {
+    where.push('m.domain_id = ?');
+    binds.push(domainId);
+  }
+  const templateId = c.req.query('template_id');
+  if (templateId) {
+    where.push('m.template_id = ?');
+    binds.push(templateId);
+  }
+  const q = c.req.query('q');
+  if (q) {
+    where.push('(m.subject LIKE ? OR m.to_json LIKE ? OR m.from_email LIKE ?)');
+    binds.push(`%${q}%`, `%${q}%`, `%${q}%`);
+  }
+  return { where, binds };
+}
+
+// Per-status counts for the current filter set (status itself excluded, so the
+// chips can always show every bucket).
+app.get('/messages/status-counts', async c => {
+  const { where, binds } = messageFilters(c);
+  const rows = await c.env.DB.prepare(
+    `SELECT status, COUNT(*) AS n FROM messages m ${where.length ? `WHERE ${where.join(' AND ')}` : ''} GROUP BY status`
+  )
+    .bind(...binds)
+    .all<{ status: string; n: number }>();
+  return c.json({ data: Object.fromEntries(rows.results.map(r => [r.status, r.n])) });
+});
+
 app.get('/messages', async c => {
   const limit = Math.min(Number(c.req.query('limit') ?? 50), 100);
   const before = Number(c.req.query('before') ?? Date.now() + 60_000);
   const status = c.req.query('status');
-  const q = c.req.query('q');
-  const where: string[] = ['m.created_at < ?'];
-  const binds: unknown[] = [before];
+  const { where, binds } = messageFilters(c);
+  where.unshift('m.created_at < ?');
+  binds.unshift(before);
   if (status) {
     where.push('m.status = ?');
     binds.push(status);
-  }
-  if (q) {
-    where.push('(m.subject LIKE ? OR m.to_json LIKE ? OR m.from_email LIKE ?)');
-    binds.push(`%${q}%`, `%${q}%`, `%${q}%`);
   }
   binds.push(limit);
   const rows = await c.env.DB.prepare(
