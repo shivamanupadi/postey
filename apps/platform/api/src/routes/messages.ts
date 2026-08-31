@@ -7,26 +7,59 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 app.get('/overview', async c => {
   const now = Date.now();
   const dayStart = new Date().toISOString().slice(0, 10);
-  const [today, week, byStatus, suppressions, domains, quota] = await Promise.all([
-    c.env.DB.prepare('SELECT sent, rejected FROM quota_usage WHERE day = ?')
-      .bind(dayStart)
-      .first<{ sent: number; rejected: number }>(),
-    c.env.DB.prepare('SELECT COUNT(*) AS n FROM messages WHERE created_at > ?')
-      .bind(now - 7 * 86_400_000)
-      .first<{ n: number }>(),
-    c.env.DB.prepare(
-      'SELECT status, COUNT(*) AS n FROM messages WHERE created_at > ? GROUP BY status'
-    )
-      .bind(now - 7 * 86_400_000)
-      .all<{ status: string; n: number }>(),
-    c.env.DB.prepare('SELECT COUNT(*) AS n FROM suppressions').first<{ n: number }>(),
-    c.env.DB.prepare('SELECT COUNT(*) AS n FROM domains WHERE status = ?')
-      .bind('active')
-      .first<{ n: number }>(),
-    c.env.DB.prepare('SELECT value FROM settings WHERE key = ?')
-      .bind('quota_daily_limit')
-      .first<{ value: string }>(),
-  ]);
+  const since7d = now - 7 * 86_400_000;
+  const since14d = now - 14 * 86_400_000;
+  const [today, week, byStatus, suppressions, domains, quota, daily, queued, lastSend, attention, suppressed7d] =
+    await Promise.all([
+      c.env.DB.prepare('SELECT sent, rejected FROM quota_usage WHERE day = ?')
+        .bind(dayStart)
+        .first<{ sent: number; rejected: number }>(),
+      c.env.DB.prepare('SELECT COUNT(*) AS n FROM messages WHERE created_at > ?')
+        .bind(since7d)
+        .first<{ n: number }>(),
+      c.env.DB.prepare(
+        'SELECT status, COUNT(*) AS n FROM messages WHERE created_at > ? GROUP BY status'
+      )
+        .bind(since7d)
+        .all<{ status: string; n: number }>(),
+      c.env.DB.prepare('SELECT COUNT(*) AS n FROM suppressions').first<{ n: number }>(),
+      c.env.DB.prepare('SELECT COUNT(*) AS n FROM domains WHERE status = ?')
+        .bind('active')
+        .first<{ n: number }>(),
+      c.env.DB.prepare('SELECT value FROM settings WHERE key = ?')
+        .bind('quota_daily_limit')
+        .first<{ value: string }>(),
+      // Per-day send counts for the overview chart (UTC days).
+      c.env.DB.prepare(
+        `SELECT date(created_at / 1000, 'unixepoch') AS day, COUNT(*) AS n
+         FROM messages WHERE created_at > ? GROUP BY day`
+      )
+        .bind(since14d)
+        .all<{ day: string; n: number }>(),
+      c.env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM messages WHERE status IN ('queued', 'sending', 'scheduled', 'deferred')"
+      ).first<{ n: number }>(),
+      c.env.DB.prepare('SELECT MAX(created_at) AS at FROM messages').first<{ at: number | null }>(),
+      // Recent problem sends for the needs-attention panel.
+      c.env.DB.prepare(
+        `SELECT id, to_json, status, error_code, error_message, created_at
+         FROM messages
+         WHERE status IN ('bounced', 'failed', 'rejected', 'complained') AND created_at > ?
+         ORDER BY created_at DESC LIMIT 5`
+      )
+        .bind(since7d)
+        .all<{
+          id: string;
+          to_json: string;
+          status: string;
+          error_code: string | null;
+          error_message: string | null;
+          created_at: number;
+        }>(),
+      c.env.DB.prepare('SELECT COUNT(*) AS n FROM suppressions WHERE created_at > ?')
+        .bind(since7d)
+        .first<{ n: number }>(),
+    ]);
   return c.json({
     data: {
       sentToday: today?.sent ?? 0,
@@ -36,6 +69,11 @@ app.get('/overview', async c => {
       suppressions: suppressions?.n ?? 0,
       activeDomains: domains?.n ?? 0,
       quotaDailyLimit: quota ? Number(quota.value) : null,
+      daily: daily.results,
+      queuedNow: queued?.n ?? 0,
+      lastSendAt: lastSend?.at ?? null,
+      attention: attention.results,
+      suppressed7d: suppressed7d?.n ?? 0,
     },
   });
 });
