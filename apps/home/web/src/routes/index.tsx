@@ -3,10 +3,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { SiteChrome } from '../site/chrome';
 import {
   CalendarClock,
-  Database,
-  FlaskConical,
   Gauge,
-  Globe,
   Inbox,
   KeyRound,
   LayoutTemplate,
@@ -64,51 +61,9 @@ const V1_FEATURES: { icon: ReactNode; title: string; body: string }[] = [
     body: 'Per-domain or account-wide keys, hashed at rest, with prefixes for display, last-used tracking, and one-click revocation.',
   },
   {
-    icon: <Globe />,
-    title: 'Automated DNS',
-    body: 'Your domain is already on Cloudflare, so SPF, DKIM, and DMARC are configured and locked automatically during onboarding. Zero copy-pasting records.',
-  },
-  {
     icon: <Inbox />,
     title: 'Inbound routing',
     body: 'Replies and unsubscribe mailboxes route into a Worker via Email Routing - forward them, webhook them, or handle them in code.',
-  },
-  {
-    icon: <FlaskConical />,
-    title: 'Free test mode',
-    body: 'Sends to verified addresses in your account are always free and quota-exempt - perfect for staging and CI.',
-  },
-  {
-    icon: <Database />,
-    title: 'Your data, exportable',
-    body: 'Logs in your D1, bodies in your R2, keys in your account. Nothing touches our servers. Export or delete anything, any time.',
-  },
-];
-
-const V2_FEATURES: { title: string; body: string }[] = [
-  {
-    title: 'Subscribers & lists',
-    body: 'Import, segment, and manage audiences in your own D1 - no per-subscriber pricing, ever.',
-  },
-  {
-    title: 'Double opt-in',
-    body: 'Confirmation flows and hosted signup forms out of the box, GDPR/CAN-SPAM friendly.',
-  },
-  {
-    title: 'Campaigns & segments',
-    body: 'Compose, target a segment, schedule, and fan out through Queues at a pace your quota allows.',
-  },
-  {
-    title: 'Open & click analytics',
-    body: 'Traks-grade campaign analytics: realtime while sending, historical via the same hot/cold data path.',
-  },
-  {
-    title: 'One-click unsubscribe',
-    body: 'List-Unsubscribe headers and hosted preference pages, wired into suppressions automatically.',
-  },
-  {
-    title: 'Pluggable bulk sender',
-    body: 'Cloudflare Email Service is transactional-only today, so campaigns ship through Amazon SES ($0.10/1k) - and switch to Cloudflare-native the day their bulk sending goes live.',
   },
 ];
 
@@ -125,15 +80,11 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'Is anything manual during install?',
-    a: 'One step: Cloudflare has no public API yet for onboarding a domain to Email Sending, so the wizard deep-links you to the dashboard for two clicks (Onboard Domain → Done). It detects completion automatically by watching your DNS, then runs a free verification send.',
+    a: 'One step: Cloudflare has no public API yet for onboarding a domain to Email Sending, so the wizard deep-links you to the dashboard for two clicks (Onboard Domain → Done). It detects completion automatically by watching your DNS, then verifies the deployment end to end.',
   },
   {
     q: 'How many emails can I send per day?',
     a: "Cloudflare applies a reputation-based daily cap that starts conservative and grows with clean sending. Postey's queue paces sends against it and surfaces the discovered limit in your dashboard, with a link to request an increase.",
-  },
-  {
-    q: 'Can I send newsletters through Cloudflare?',
-    a: 'Not yet - Cloudflare Email Service currently allows transactional email only. Postey v2 ships campaigns through a pluggable provider (Amazon SES first) and will move to Cloudflare-native bulk sending when it launches.',
   },
   {
     q: 'Does any of my data leave my account?',
@@ -235,7 +186,7 @@ function Landing(): ReactElement {
           <p className="mx-auto mt-7 max-w-xl text-lg leading-relaxed text-ink-soft">
             Postey installs a complete transactional email platform - API, logs, templates,
             suppressions, webhooks - into your own Cloudflare account. No middleman, no
-            per-subscriber pricing, no data leaving your infrastructure.
+            per-email markup, no data leaving your infrastructure.
           </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
             <a
@@ -251,7 +202,7 @@ function Landing(): ReactElement {
               href="#features"
               className="rounded-[10px] border border-line bg-white px-7 py-3.5 text-[17px] font-medium text-ink transition hover:bg-paper-deep/40"
             >
-              Explore the scope
+              Explore the features
             </a>
           </div>
           <p className="mt-6 font-mono text-xs text-ink-soft">
@@ -268,10 +219,10 @@ function Landing(): ReactElement {
               align="left"
               kicker="Resend-compatible API"
               title="Keep your SDK. Change one URL."
-              body="Postey speaks the same REST dialect your code already does. Point your existing client at your own domain and every send flows through Workers you control."
+              body="Postey speaks the same REST dialect your code already does. Point your existing client at your own domain and every send flows through Workers you control. Coding agents get their own send tools via the built-in MCP server."
             />
             <div className="mt-7 flex flex-wrap gap-2.5">
-              {['node', 'python', 'go', 'curl', 'rest'].map(s => (
+              {['node', 'python', 'go', 'curl', 'rest', 'mcp'].map(s => (
                 <span
                   key={s}
                   className="rounded-lg border border-line bg-white/60 px-2.5 py-1 font-mono text-xs text-ink-soft"
@@ -308,7 +259,7 @@ function Landing(): ReactElement {
               {
                 n: '03',
                 title: 'Send',
-                body: 'The wizard detects your DNS going live, fires a free verification send, and hands you an API key. Point your app at your new instance.',
+                body: 'The wizard detects your DNS going live, verifies the deployment end to end, and hands you your dashboard. Create a key and point your app at your new instance.',
               },
             ].map(s => (
               <div
@@ -330,7 +281,7 @@ function Landing(): ReactElement {
       <section id="features" className="border-t border-line-soft bg-paper-deep py-24">
         <div className="mx-auto max-w-6xl px-5">
           <SectionTitle
-            kicker="v1 · Transactional"
+            kicker="Features"
             title="Everything the raw API doesn't give you"
             body="Cloudflare Email Service delivers the mail, signs DKIM, and manages IP reputation. Postey adds the product layer around it."
           />
@@ -351,36 +302,12 @@ function Landing(): ReactElement {
         </div>
       </section>
 
-      {/* Newsletters roadmap - dark band */}
-      <section id="newsletters" className="bg-ink-deep py-24">
-        <div className="mx-auto max-w-6xl px-5">
-          <SectionTitle
-            light
-            kicker="v2 · On the roadmap"
-            title="Newsletters without the subscriber tax"
-            body="Hosted platforms bill by list size: 10,000 subscribers runs $109/mo on beehiiv and $139/mo on Kit - while the actual sending costs a few dollars. Postey bills you nothing; you pay only provider usage."
-          />
-          <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {V2_FEATURES.map(f => (
-              <div key={f.title} className="rounded-2xl border border-white/10 bg-white/5 p-6">
-                <h3 className="text-base font-semibold text-cream">{f.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-cream/60">{f.body}</p>
-              </div>
-            ))}
-          </div>
-          <p className="mt-10 text-center font-mono text-sm text-cream/50">
-            10,000 subscribers × 4 sends/mo ≈ <span className="text-[#ff8fa3]">$19/mo</span> in
-            usage - vs $109–139/mo hosted
-          </p>
-        </div>
-      </section>
-
       {/* Architecture */}
       <section id="architecture" className="py-24">
         <div className="mx-auto max-w-6xl px-5">
           <SectionTitle
             kicker="Architecture"
-            title="Four workers, zero servers"
+            title="Three workers, zero servers"
             body="Everything runs on Cloudflare primitives inside your account - the same hot/cold data design proven in Traks."
           />
           <div className="mt-12 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -391,8 +318,8 @@ function Landing(): ReactElement {
                 body: 'Resend-compatible REST. Validates keys, checks suppressions, enforces idempotency, enqueues to Queues.',
               },
               {
-                name: 'queue consumer',
-                role: 'Delivery pipeline',
+                name: 'send · consumer',
+                role: 'Delivery pipeline (same worker)',
                 body: 'Paces against your discovered daily quota, retries with backoff, records per-recipient status from the Email Service response.',
               },
               {
@@ -427,7 +354,7 @@ function Landing(): ReactElement {
           <SectionTitle
             kicker="Pricing"
             title="Postey is software, not a middleman"
-            body="The platform is yours to run. You pay Cloudflare for usage - nothing to us per email, per subscriber, or per seat."
+            body="The platform is yours to run. You pay Cloudflare for usage - nothing to us per email or per seat."
           />
           <div className="mt-12 overflow-hidden rounded-2xl border border-line-soft bg-white shadow-[0_1px_2px_rgba(30,25,18,0.04)]">
             <table className="w-full text-left text-sm">
@@ -454,7 +381,7 @@ function Landing(): ReactElement {
           <p className="mt-4 text-center text-xs text-ink-soft">
             Approximate published pricing, August 2026. Postey = $5/mo Workers Paid plan + $0.35 per
             1,000 emails after the 3,000 included. The real difference isn't the bill - it's that
-            your logs, lists, and reputation are yours.
+            your logs, templates, and reputation are yours.
           </p>
         </div>
       </section>

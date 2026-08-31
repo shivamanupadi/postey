@@ -25,8 +25,8 @@ export function SiteChrome({ children }: { children: ReactNode }): ReactElement 
             <a href="/#features" className="rounded-full px-3 py-1.5 transition hover:bg-paper hover:text-ink">
               Features
             </a>
-            <a href="/#newsletters" className="rounded-full px-3 py-1.5 transition hover:bg-paper hover:text-ink">
-              Newsletters
+            <a href="/#architecture" className="rounded-full px-3 py-1.5 transition hover:bg-paper hover:text-ink">
+              Architecture
             </a>
             <a href="/#pricing" className="rounded-full px-3 py-1.5 transition hover:bg-paper hover:text-ink">
               Pricing
@@ -55,8 +55,7 @@ export function SiteChrome({ children }: { children: ReactNode }): ReactElement 
               <Wordmark />
             </div>
             <p className="mt-3 text-sm leading-relaxed text-ink-soft">
-              Self-hosted transactional email &amp; newsletters, installed into your own Cloudflare
-              account.
+              Self-hosted transactional email, installed into your own Cloudflare account.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-10 text-sm sm:grid-cols-3">
