@@ -7,6 +7,7 @@ import {
   Inbox,
   KeyRound,
   LayoutTemplate,
+  Plug,
   ShieldOff,
   Sparkles,
   UserRound,
@@ -41,6 +42,7 @@ const SECTIONS: { label: string | null; items: NavItem[] }[] = [
       { to: '/domains', label: 'Domains', icon: Globe },
       { to: '/keys', label: 'API keys', icon: KeyRound },
       { to: '/templates', label: 'Templates', icon: LayoutTemplate },
+      { to: '/mcp', label: 'MCP server', icon: Plug },
     ],
   },
   {

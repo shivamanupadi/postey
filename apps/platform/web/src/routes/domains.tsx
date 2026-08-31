@@ -158,6 +158,111 @@ function DomainDrawer({ d, onClose }: { d: DomainRow; onClose: () => void }): Re
   );
 }
 
+/** Verify & activate (and unarchive, which re-verifies): live DNS checks,
+ *  the exact Cloudflare onboarding steps, and the activation itself - with
+ *  its loader and errors kept inside this modal. */
+function VerifyActivateModal({ d, onClose }: { d: DomainRow; onClose: () => void }): ReactElement {
+  const qc = useQueryClient();
+  const unarchiving = d.status === 'archived';
+  const checks = useQuery({
+    queryKey: ['domain-checks', d.id],
+    queryFn: () =>
+      api.get<{ spf: boolean; dkim: boolean; mx: boolean }>(`/api/domains/${d.id}/checks`),
+    staleTime: 10_000,
+  });
+  const activate = useMutation({
+    mutationFn: () => api.post(`/api/domains/${d.id}/activate`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['domains'] });
+      onClose();
+    },
+  });
+  const c = checks.data;
+  const dnsReady = Boolean(c && c.spf && c.dkim && c.mx);
+
+  return (
+    <Modal
+      title={unarchiving ? `Unarchive ${d.name}` : `Verify & activate ${d.name}`}
+      sub={
+        unarchiving
+          ? 'Re-verifies the onboarding DNS, then turns sending back on.'
+          : "Sending turns on once Cloudflare's onboarding records are live."
+      }
+      onClose={onClose}
+    >
+      <div className="mt-4 space-y-4">
+        <section>
+          <div className="mb-1 flex items-center justify-between">
+            <h3 className="text-[12.5px] font-semibold text-ink">Onboarding DNS</h3>
+            <button
+              type="button"
+              onClick={() => void qc.invalidateQueries({ queryKey: ['domain-checks', d.id] })}
+              className="rounded-full border border-line px-3 py-1 text-xs font-semibold text-ink-soft transition hover:bg-card hover:text-ink"
+            >
+              {checks.isFetching ? 'Checking…' : 'Re-check'}
+            </button>
+          </div>
+          <div className="divide-y divide-[#efe8dc] rounded-[10px] border border-line-soft bg-paper px-3.5 py-1">
+            <CheckRow ok={c ? c.spf : null} label="cf-bounce TXT (SPF)" />
+            <CheckRow ok={c ? c.dkim : null} label="cf-bounce._domainkey (DKIM)" />
+            <CheckRow ok={c ? c.mx : null} label="cf-bounce MX" />
+          </div>
+        </section>
+
+        {!dnsReady && (
+          <section className="rounded-[10px] bg-warn-soft px-4 py-3.5">
+            <h3 className="text-[12.5px] font-semibold text-warn">
+              Records missing - onboard the domain in Cloudflare first
+            </h3>
+            <ol className="mt-2 list-decimal space-y-1.5 pl-4 text-[12px] leading-relaxed text-ink">
+              <li>
+                Open{' '}
+                <a
+                  className="font-semibold text-accent-deep underline"
+                  href="https://dash.cloudflare.com/?to=/:account/email-service/sending"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Email Service → Email Sending
+                </a>{' '}
+                in the Cloudflare dashboard (the account that owns this zone).
+              </li>
+              <li>
+                Click <b>Onboard domain</b> and choose <b className="font-mono">{d.name}</b>.
+              </li>
+              <li>
+                Confirm - Cloudflare creates and locks the three cf-bounce records itself.
+                There is nothing to copy or paste manually.
+              </li>
+              <li>
+                Give DNS a minute or two, hit <b>Re-check</b> above, then verify below.
+              </li>
+            </ol>
+            <p className="mt-2 font-mono text-[10.5px] text-ink-soft">
+              CLI alternative: npx wrangler email sending enable {d.name}
+            </p>
+          </section>
+        )}
+
+        <ErrorNote error={activate.error} />
+
+        <div className="flex justify-end gap-2 pt-1">
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={() => activate.mutate()} disabled={activate.isPending}>
+            {activate.isPending
+              ? 'Verifying…'
+              : unarchiving
+                ? 'Verify & unarchive'
+                : 'Verify & activate'}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function DomainsPage(): ReactElement {
   const qc = useQueryClient();
   const domains = useQuery({
@@ -170,6 +275,7 @@ function DomainsPage(): ReactElement {
   const [deleting, setDeleting] = useState<DomainRow | null>(null);
   const [archiving, setArchiving] = useState<DomainRow | null>(null);
   const [inspecting, setInspecting] = useState<DomainRow | null>(null);
+  const [verifying, setVerifying] = useState<DomainRow | null>(null);
 
   const refresh = (): void => void qc.invalidateQueries({ queryKey: ['domains'] });
   const add = useMutation({
@@ -179,10 +285,6 @@ function DomainsPage(): ReactElement {
       setAdding(false);
       refresh();
     },
-  });
-  const activate = useMutation({
-    mutationFn: (id: string) => api.post(`/api/domains/${id}/activate`),
-    onSuccess: refresh,
   });
   const archive = useMutation({
     mutationFn: (id: string) => api.post(`/api/domains/${id}/archive`),
@@ -224,7 +326,7 @@ function DomainsPage(): ReactElement {
           </Button>
         }
       />
-      <ErrorNote error={activate.error ?? archive.error ?? remove.error} />
+      <ErrorNote error={archive.error ?? remove.error} />
 
       <div className="flex flex-wrap gap-1.5">
         <FilterChip
@@ -283,7 +385,7 @@ function DomainsPage(): ReactElement {
                     <Info className="h-4 w-4" />
                   </button>
                   {(d.status === 'pending' || d.status === 'archived') && (
-                    <Button variant="ghost" onClick={() => activate.mutate(d.id)}>
+                    <Button variant="ghost" onClick={() => setVerifying(d)}>
                       {d.status === 'archived' ? 'Unarchive' : 'Verify & activate'}
                     </Button>
                   )}
@@ -404,6 +506,8 @@ function DomainsPage(): ReactElement {
       )}
 
       {inspecting && <DomainDrawer d={inspecting} onClose={() => setInspecting(null)} />}
+
+      {verifying && <VerifyActivateModal d={verifying} onClose={() => setVerifying(null)} />}
 
       {archiving && (
         <ConfirmDialog

@@ -1,4 +1,4 @@
-import { useState, type ReactElement, type FormEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useState, type ReactElement, type FormEvent, type ReactNode } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check } from 'lucide-react';
@@ -14,8 +14,106 @@ import {
   Input,
   Modal,
   PageHeader,
+  Segmented,
   Table,
 } from '@/lib/ui';
+
+const CodeEditor = lazy(() => import('@/lib/code-editor'));
+
+/* ── signature-verification snippets ─────────────────────────────── */
+
+type VerifyLang = 'node' | 'python';
+
+const VERIFY_SNIPPETS: Record<VerifyLang, string> = {
+  node: `import { createHmac, timingSafeEqual } from "node:crypto";
+
+// Set POSTEY_WEBHOOK_SECRET to this endpoint's signing secret (above).
+// Verify against the RAW body - parse JSON only after this passes.
+function verifyPostey(rawBody, signatureHeader) {
+  const expected =
+    "sha256=" +
+    createHmac("sha256", process.env.POSTEY_WEBHOOK_SECRET)
+      .update(rawBody, "utf8")
+      .digest("hex");
+  const got = Buffer.from(signatureHeader ?? "");
+  const want = Buffer.from(expected);
+  return got.length === want.length && timingSafeEqual(got, want);
+}
+
+// Express example:
+// app.post("/webhooks/postey", express.raw({ type: "*/*" }), (req, res) => {
+//   if (!verifyPostey(req.body, req.get("Postey-Signature")))
+//     return res.sendStatus(401);
+//   const event = JSON.parse(req.body);
+//   // event.type: "email.delivered" | "email.bounced" | ...
+//   // event.data: { message_id, subject, from, recipient?, tags? }
+//   res.sendStatus(200);
+// });`,
+  python: `import hmac, hashlib, os
+
+# Set POSTEY_WEBHOOK_SECRET to this endpoint's signing secret (above).
+# Verify against the RAW body bytes - parse JSON only after this passes.
+def verify_postey(raw_body: bytes, signature_header: str | None) -> bool:
+    expected = "sha256=" + hmac.new(
+        os.environ["POSTEY_WEBHOOK_SECRET"].encode(),
+        raw_body,
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(signature_header or "", expected)
+
+# Flask example:
+# @app.post("/webhooks/postey")
+# def postey_webhook():
+#     if not verify_postey(request.get_data(), request.headers.get("Postey-Signature")):
+#         return "", 401
+#     event = request.get_json()  # {"type": "email.bounced", "data": {...}}
+#     return "", 200`,
+};
+
+function VerifySnippet(): ReactElement {
+  const [lang, setLang] = useState<VerifyLang>('node');
+  const [copied, setCopied] = useState(false);
+  const snippet = VERIFY_SNIPPETS[lang];
+  return (
+    <div>
+      <div className="flex items-center justify-between">
+        <Segmented options={['node', 'python'] as const} value={lang} onChange={setLang} />
+        <button
+          type="button"
+          onClick={() => {
+            void navigator.clipboard.writeText(snippet).then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            });
+          }}
+          className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+            copied
+              ? 'bg-accent-soft text-accent-deep'
+              : 'border border-line text-ink-soft hover:bg-card hover:text-ink'
+          }`}
+        >
+          {copied ? 'Copied ✓' : 'Copy'}
+        </button>
+      </div>
+      <div className="mt-2 overflow-hidden rounded-xl border border-line">
+        <Suspense
+          fallback={
+            <div className="flex h-[180px] items-center justify-center bg-card text-xs text-ink-soft">
+              Loading…
+            </div>
+          }
+        >
+          <CodeEditor
+            value={snippet}
+            lang={lang === 'node' ? 'javascript' : 'python'}
+            readOnly
+            height="auto"
+          />
+        </Suspense>
+      </div>
+    </div>
+  );
+}
 
 export const Route = createFileRoute('/webhooks')({
   component: WebhooksPage,
@@ -170,10 +268,14 @@ function WebhookDrawer({
         <DrawerSection title="Signing secret">
           <SecretRow secret={h.secret} />
           <p className="mt-2 text-[11px] leading-relaxed text-ink-soft">
-            Verify the <code className="font-mono text-[10.5px]">Postey-Signature</code> header:
-            HMAC-SHA256 of the raw body with this secret, hex, prefixed{' '}
-            <code className="font-mono text-[10.5px]">sha256=</code>.
+            Every delivery carries a <code className="font-mono text-[10.5px]">Postey-Signature</code>{' '}
+            header: HMAC-SHA256 of the raw body with this secret, hex, prefixed{' '}
+            <code className="font-mono text-[10.5px]">sha256=</code> (plus a{' '}
+            <code className="font-mono text-[10.5px]">Postey-Event</code> header naming the event).
           </p>
+        </DrawerSection>
+        <DrawerSection title="Verify incoming requests">
+          <VerifySnippet />
         </DrawerSection>
         <DrawerSection title="Subscribed events">
           <div className="flex flex-wrap gap-1">

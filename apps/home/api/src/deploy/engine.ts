@@ -567,6 +567,18 @@ export async function provisionInstance(ctx: EngineCtx): Promise<ProvisionResult
       ],
     });
     await attachConsumer(ctx, cf, eventsQueueId, N.sendWorker);
+    // Legacy cleanup: instances deployed before v0.0.25 had a send queue
+    // (delivery is inline now). Best-effort delete on update - any jobs
+    // still in it are already stranded; the new worker ignores them.
+    await (async () => {
+      const list = await cf('GET', `/accounts/${ctx.accountId}/queues?per_page=100`);
+      const rows = (Array.isArray(list) ? list : (list?.queues ?? [])) as {
+        queue_id: string;
+        queue_name: string;
+      }[];
+      const legacy = rows.find(q => q.queue_name === N.queue);
+      if (legacy) await cf('DELETE', `/accounts/${ctx.accountId}/queues/${legacy.queue_id}`);
+    })().catch(() => undefined);
   });
 
   await ensureEventSubscription(ctx, cf, eventsQueueId);

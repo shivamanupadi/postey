@@ -418,8 +418,8 @@ function KeysPage(): ReactElement {
           <p className="text-[13px] leading-relaxed text-ink-soft">
             POST Resend-shaped payloads to <code className="font-mono text-xs">/api/emails</code>{' '}
             with any key. Supports templates (template_id + variables), attachments (base64),
-            idempotency keys, and scheduling - the mcp tab wires a coding agent to your
-            instance's built-in MCP server.
+            and idempotency keys - the MCP server tab wires a coding agent to your instance's
+            built-in MCP server.
           </p>
           <SendSnippets apiKey={null} />
         </Modal>
