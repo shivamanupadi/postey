@@ -9,6 +9,8 @@ import {
   LayoutTemplate,
   Settings,
   ShieldOff,
+  Sparkles,
+  UserRound,
   Webhook,
   type LucideIcon,
 } from 'lucide-react';
@@ -79,25 +81,20 @@ function UpdatePill(): ReactElement | null {
   const current = config.data?.version;
   const instanceId = config.data?.deployInstanceId;
   if (!current || !instanceId || !latest.data || latest.data === current) return null;
+  // Flat link row on the sidebar's own background - nav-item shaped, hover tint only.
   return (
     <a
       href={`https://postey.app/update?instance=${encodeURIComponent(instanceId)}`}
       target="_blank"
       rel="noreferrer"
-      className="mx-3 mb-2.5 block rounded-[10px] bg-accent-soft px-3 py-2 text-xs font-semibold text-accent-deep transition hover:brightness-[.97]"
+      className="mx-3 mb-1.5 flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold text-accent-deep transition hover:bg-card/55"
     >
-      Update available: v{latest.data} →
+      <Sparkles className="h-3.5 w-3.5 shrink-0 text-accent" />
+      v{latest.data} available
+      <span className="ml-auto font-medium">Update →</span>
     </a>
   );
 }
-
-const initials = (email: string): string => {
-  const local = email.split('@')[0] ?? '';
-  const parts = local.split(/[._-]+/).filter(Boolean);
-  const chars =
-    parts.length >= 2 ? `${parts[0][0]}${parts[1][0]}` : local.slice(0, 2) || '?';
-  return chars.toUpperCase();
-};
 
 function RootLayout(): ReactElement {
   const path = useRouterState({ select: s => s.location.pathname });
@@ -175,8 +172,8 @@ function RootLayout(): ReactElement {
         </nav>
         <UpdatePill />
         <div className="flex items-center gap-2.5 border-t border-[#ded5c6] px-4 py-3.5">
-          <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-ink-deep text-[10.5px] font-semibold text-cream">
-            {initials(me.data?.email ?? '')}
+          <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-ink-deep text-cream">
+            <UserRound className="h-3.5 w-3.5" />
           </span>
           <div className="min-w-0">
             <p className="truncate text-[11.5px] text-ink-soft">{me.data?.email}</p>
