@@ -9,7 +9,7 @@ app.get('/overview', async c => {
   const dayStart = new Date().toISOString().slice(0, 10);
   const since7d = now - 7 * 86_400_000;
   const since14d = now - 14 * 86_400_000;
-  const [today, week, byStatus, suppressions, domains, quota, daily, queued, lastSend, attention, suppressed7d] =
+  const [today, week, byStatus, suppressions, domains, daily, queued, lastSend, attention, suppressed7d] =
     await Promise.all([
       c.env.DB.prepare('SELECT sent, rejected FROM quota_usage WHERE day = ?')
         .bind(dayStart)
@@ -26,9 +26,6 @@ app.get('/overview', async c => {
       c.env.DB.prepare('SELECT COUNT(*) AS n FROM domains WHERE status = ?')
         .bind('active')
         .first<{ n: number }>(),
-      c.env.DB.prepare('SELECT value FROM settings WHERE key = ?')
-        .bind('quota_daily_limit')
-        .first<{ value: string }>(),
       // Per-day send counts for the overview chart (UTC days).
       c.env.DB.prepare(
         `SELECT date(created_at / 1000, 'unixepoch') AS day, COUNT(*) AS n
@@ -68,7 +65,6 @@ app.get('/overview', async c => {
       byStatus: Object.fromEntries(byStatus.results.map(r => [r.status, r.n])),
       suppressions: suppressions?.n ?? 0,
       activeDomains: domains?.n ?? 0,
-      quotaDailyLimit: quota ? Number(quota.value) : null,
       daily: daily.results,
       queuedNow: queued?.n ?? 0,
       lastSendAt: lastSend?.at ?? null,

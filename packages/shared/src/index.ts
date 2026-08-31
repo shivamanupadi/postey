@@ -177,14 +177,3 @@ export async function signWebhook(secret: string, body: string): Promise<string>
   return `sha256=${[...new Uint8Array(sig)].map(b => b.toString(16).padStart(2, '0')).join('')}`;
 }
 
-/* ── quota settings keys (settings table) ────────────────────────── */
-
-export const SETTING_KEYS = {
-  /** Discovered CF daily cap - set when a send returns E_DAILY_LIMIT_EXCEEDED. */
-  quotaDailyLimit: 'quota_daily_limit',
-  /** Days to keep message bodies in R2 (metadata stays in D1). */
-  retentionDays: 'retention_days',
-  defaultFrom: 'default_from',
-  /** Verified address inbound mail gets forwarded to (optional). */
-  inboundForward: 'inbound_forward',
-} as const;

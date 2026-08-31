@@ -1,11 +1,13 @@
 /**
- * Postey send worker - the public send API (Resend-compatible surface) and
- * the queue consumer that delivers through Cloudflare Email Service.
+ * Postey send worker - the public send API (Resend-compatible surface).
  *
  * Requests authenticate with an API key (`Authorization: Bearer pk_...`);
- * keys are stored hashed. Accepted sends are recorded in D1 (metadata) and R2
- * (bodies), then enqueued - delivery, retries, and quota pacing live in the
- * consumer (deliver.ts), never in the request path.
+ * keys are stored hashed. Sends are recorded in D1 (metadata) and R2 (bodies)
+ * and delivered INLINE through Cloudflare Email Service (deliver.ts) - the
+ * response carries Cloudflare's real answer. Transient failures (daily cap,
+ * rate limit) come back as 429/502 for the caller to retry; a retry with the
+ * same idempotency key re-attempts the failed message. Delivery lifecycle
+ * events (delivered / bounced / complained) arrive via the events queue.
  */
 import { Hono, type Context } from 'hono';
 import {
@@ -19,8 +21,8 @@ import {
   type SendEmailInput,
   type StoredAttachment,
 } from '@postey/shared';
-import type { Bindings, QueueJob } from './types';
-import { deliverBatch } from './deliver';
+import type { Bindings } from './types';
+import { deliverNow } from './deliver';
 import { mcpHandler } from './mcp';
 import { handleEmailEvents } from './events';
 
@@ -34,8 +36,6 @@ type Variables = { apiKey: ApiKeyRow };
 type AppCtx = Context<{ Bindings: Bindings; Variables: Variables }>;
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
-
-const MAX_SCHEDULE_MS = 12 * 3600 * 1000; // Queues delaySeconds ceiling
 
 app.get('/', c => c.json({ name: 'postey-send', status: 'ok' }));
 app.get('/health', c => c.json({ status: 'ok', timestamp: new Date().toISOString() }));
@@ -130,27 +130,27 @@ async function handleSend(c: AppCtx): Promise<Response> {
   if (kinds.size === 0) return c.json({ error: 'At least one recipient is required' }, 422);
   if (kinds.size > 50) return c.json({ error: 'At most 50 recipients per email' }, 422);
 
-  /* Scheduling (bounded by the queue's max delay). */
-  let delaySeconds = 0;
-  let scheduledAt: number | null = null;
   if (input.scheduled_at) {
-    scheduledAt = Date.parse(input.scheduled_at);
-    const delta = scheduledAt - Date.now();
-    if (delta > MAX_SCHEDULE_MS) {
-      return c.json({ error: 'scheduled_at can be at most 12 hours in the future' }, 422);
-    }
-    delaySeconds = Math.max(0, Math.floor(delta / 1000));
+    return c.json({ error: 'scheduled_at is not supported: emails send immediately' }, 422);
   }
 
-  /* Idempotency: header wins over body. */
+  /* Idempotency: header wins over body. A previously FAILED message is
+   * re-attempted under its original id (the whole point of retrying after a
+   * 429/502); any other status replays the original acceptance. */
   const idem = c.req.header('idempotency-key') ?? input.idempotency_key ?? null;
+  let retryOfFailed = false;
+  let existingId: string | null = null;
   if (idem) {
     const existing = await c.env.DB.prepare(
-      'SELECT id FROM messages WHERE api_key_id = ? AND idempotency_key = ?'
+      'SELECT id, status FROM messages WHERE api_key_id = ? AND idempotency_key = ?'
     )
       .bind(key.id, idem)
-      .first<{ id: string }>();
-    if (existing) return c.json({ id: existing.id });
+      .first<{ id: string; status: string }>();
+    if (existing && existing.status !== 'failed') return c.json({ id: existing.id });
+    if (existing) {
+      existingId = existing.id;
+      retryOfFailed = true;
+    }
   }
 
   /* Suppression check - suppressed recipients never leave the API boundary. */
@@ -167,15 +167,17 @@ async function handleSend(c: AppCtx): Promise<Response> {
   );
   const live = addresses.filter(a => !suppressed.has(a));
 
-  const id = newId('msg');
+  const id = existingId ?? newId('msg');
   const now = Date.now();
-  const status = live.length === 0 ? 'suppressed' : scheduledAt ? 'scheduled' : 'queued';
+  const status = live.length === 0 ? 'suppressed' : 'sending';
   const bodyKey = `bodies/${id}.json`;
 
-  /* Attachments: decode base64, store binary under the message's R2 prefix,
-   * record a manifest in the body JSON. Total decoded size ≤ 4 MiB. */
+  /* Attachments: decode base64, store binary under the message's R2 prefix
+   * (for the email log), keep the bytes in memory for the inline send.
+   * Total decoded size ≤ 4 MiB. */
   const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024;
   const attachments: StoredAttachment[] = [];
+  const attachmentBinaries: NonNullable<Parameters<typeof deliverNow>[2]['attachments']> = [];
   if (input.attachments?.length) {
     let total = 0;
     for (let i = 0; i < input.attachments.length; i++) {
@@ -192,13 +194,22 @@ async function handleSend(c: AppCtx): Promise<Response> {
       }
       const key = `bodies/${id}/att/${i}`;
       await c.env.BODIES.put(key, bytes as unknown as ArrayBuffer);
+      const type = a.content_type ?? 'application/octet-stream';
+      const disposition = a.disposition ?? 'attachment';
       attachments.push({
         key,
         filename: a.filename,
-        type: a.content_type ?? 'application/octet-stream',
-        disposition: a.disposition ?? 'attachment',
+        type,
+        disposition,
         content_id: a.content_id ?? null,
         size: bytes.length,
+      });
+      attachmentBinaries.push({
+        content: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+        filename: a.filename,
+        type,
+        disposition,
+        ...(a.content_id ? { contentId: a.content_id } : {}),
       });
     }
   }
@@ -212,66 +223,101 @@ async function handleSend(c: AppCtx): Promise<Response> {
     })
   );
 
-  const statements = [
-    c.env.DB.prepare(
-      `INSERT INTO messages (id, domain_id, api_key_id, from_email, from_name, to_json, cc_json, bcc_json,
-         reply_to, subject, body_r2_key, headers_json, template_id, tags_json, idempotency_key, status,
-         scheduled_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(
-      id,
-      domain.id,
-      key.id,
-      from.email,
-      from.name ?? null,
-      JSON.stringify(to),
-      cc.length ? JSON.stringify(cc) : null,
-      bcc.length ? JSON.stringify(bcc) : null,
-      toList(input.reply_to)[0] ?? null,
-      subject,
-      bodyKey,
-      input.headers ? JSON.stringify(input.headers) : null,
-      input.template_id ?? null,
-      input.tags ? JSON.stringify(input.tags) : null,
-      idem,
-      status,
-      scheduledAt,
-      now
-    ),
-    ...addresses.map(addr =>
+  if (retryOfFailed) {
+    /* Re-attempt of a failed message: reset the existing row in place. */
+    await c.env.DB.batch([
       c.env.DB.prepare(
-        'INSERT INTO message_recipients (message_id, address, kind, status, updated_at) VALUES (?, ?, ?, ?, ?)'
-      ).bind(id, addr, kinds.get(addr)!, suppressed.has(addr) ? 'suppressed' : 'queued', now)
-    ),
-    c.env.DB.prepare(
-      'INSERT INTO message_events (id, message_id, event, meta_json, created_at) VALUES (?, ?, ?, ?, ?)'
-    ).bind(
-      newId('evt'),
-      id,
-      status === 'suppressed' ? 'suppressed' : 'queued',
-      suppressed.size ? JSON.stringify({ suppressed: [...suppressed] }) : null,
-      now
-    ),
-  ];
-  try {
-    await c.env.DB.batch(statements);
-  } catch (err) {
-    // Idempotency race: two identical requests inserted concurrently.
-    if (idem && err instanceof Error && /UNIQUE/i.test(err.message)) {
-      const existing = await c.env.DB.prepare(
-        'SELECT id FROM messages WHERE api_key_id = ? AND idempotency_key = ?'
-      )
-        .bind(key.id, idem)
-        .first<{ id: string }>();
-      if (existing) return c.json({ id: existing.id });
+        "UPDATE messages SET status = ?, error_code = NULL, error_message = NULL, completed_at = NULL, attempts = attempts + 1 WHERE id = ?"
+      ).bind(status, id),
+      c.env.DB.prepare(
+        "UPDATE message_recipients SET status = 'queued', error = NULL, updated_at = ? WHERE message_id = ? AND status != 'suppressed'"
+      ).bind(now, id),
+      c.env.DB.prepare(
+        'INSERT INTO message_events (id, message_id, event, meta_json, created_at) VALUES (?, ?, ?, ?, ?)'
+      ).bind(newId('evt'), id, 'queued', JSON.stringify({ retry: true }), now),
+    ]);
+  } else {
+    const statements = [
+      c.env.DB.prepare(
+        `INSERT INTO messages (id, domain_id, api_key_id, from_email, from_name, to_json, cc_json, bcc_json,
+           reply_to, subject, body_r2_key, headers_json, template_id, tags_json, idempotency_key, status,
+           scheduled_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        id,
+        domain.id,
+        key.id,
+        from.email,
+        from.name ?? null,
+        JSON.stringify(to),
+        cc.length ? JSON.stringify(cc) : null,
+        bcc.length ? JSON.stringify(bcc) : null,
+        toList(input.reply_to)[0] ?? null,
+        subject,
+        bodyKey,
+        input.headers ? JSON.stringify(input.headers) : null,
+        input.template_id ?? null,
+        input.tags ? JSON.stringify(input.tags) : null,
+        idem,
+        status,
+        null,
+        now
+      ),
+      ...addresses.map(addr =>
+        c.env.DB.prepare(
+          'INSERT INTO message_recipients (message_id, address, kind, status, updated_at) VALUES (?, ?, ?, ?, ?)'
+        ).bind(id, addr, kinds.get(addr)!, suppressed.has(addr) ? 'suppressed' : 'queued', now)
+      ),
+      c.env.DB.prepare(
+        'INSERT INTO message_events (id, message_id, event, meta_json, created_at) VALUES (?, ?, ?, ?, ?)'
+      ).bind(
+        newId('evt'),
+        id,
+        status === 'suppressed' ? 'suppressed' : 'queued',
+        suppressed.size ? JSON.stringify({ suppressed: [...suppressed] }) : null,
+        now
+      ),
+    ];
+    try {
+      await c.env.DB.batch(statements);
+    } catch (err) {
+      // Idempotency race: two identical requests inserted concurrently.
+      if (idem && err instanceof Error && /UNIQUE/i.test(err.message)) {
+        const existing = await c.env.DB.prepare(
+          'SELECT id FROM messages WHERE api_key_id = ? AND idempotency_key = ?'
+        )
+          .bind(key.id, idem)
+          .first<{ id: string }>();
+        if (existing) return c.json({ id: existing.id });
+      }
+      throw err;
     }
-    throw err;
   }
 
-  if (live.length > 0) {
-    await c.env.SEND_QUEUE.send({ messageId: id }, delaySeconds ? { delaySeconds } : undefined);
-  }
+  if (live.length === 0) return c.json({ id }, 200);
 
+  /* Inline delivery: the response is Cloudflare's real answer. */
+  const lists = { to: [] as string[], cc: [] as string[], bcc: [] as string[] };
+  for (const addr of live) lists[kinds.get(addr)!].push(addr);
+  const outcome = await deliverNow(c.env, c.executionCtx, {
+    id,
+    domainId: domain.id,
+    fromEmail: from.email,
+    fromName: from.name ?? null,
+    replyTo: toList(input.reply_to)[0] ?? null,
+    subject,
+    headers: input.headers ?? null,
+    tagsJson: input.tags ? JSON.stringify(input.tags) : null,
+    lists,
+    html: html ?? null,
+    text: text ?? null,
+    ...(attachmentBinaries.length ? { attachments: attachmentBinaries } : {}),
+  });
+
+  if (outcome.kind === 'error') {
+    if (outcome.retryAfter) c.header('Retry-After', String(outcome.retryAfter));
+    return c.json({ id, error: outcome.message, code: outcome.code }, outcome.http);
+  }
   return c.json({ id }, 200);
 }
 
@@ -460,10 +506,7 @@ app.onError((err, c) => {
 
 export default {
   fetch: app.fetch,
-  // Two consumers, one worker: the send queue drives delivery; the events
-  // queue receives Cloudflare's Email Sending lifecycle events.
-  queue: (batch: MessageBatch<unknown>, env: Bindings, ctx: ExecutionContext) =>
-    batch.queue.includes('events')
-      ? handleEmailEvents(batch, env, ctx)
-      : deliverBatch(batch as MessageBatch<QueueJob>, env, ctx),
+  // The events queue receives Cloudflare's Email Sending lifecycle events.
+  // (Delivery itself is inline; there is no send queue.)
+  queue: handleEmailEvents,
 };

@@ -88,7 +88,6 @@ export const PROVISION_PLAN: { stepId: string; label: string }[] = [
   { stepId: 'd1', label: 'Create D1 database' },
   { stepId: 'db-migrations', label: 'Apply database migrations' },
   { stepId: 'bucket', label: 'Create R2 bodies bucket' },
-  { stepId: 'queue', label: 'Create send queue' },
   { stepId: 'events-queue', label: 'Create delivery-events queue' },
   { stepId: 'send-worker', label: 'Deploy send worker' },
   { stepId: 'event-subscription', label: 'Subscribe to delivery events' },

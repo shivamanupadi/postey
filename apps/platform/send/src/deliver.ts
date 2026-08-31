@@ -1,42 +1,15 @@
 /**
- * Queue consumer: the delivery pipeline.
- *
- * Cloudflare's daily sending cap is reputation-gated and unpublished, so the
- * consumer treats it as DISCOVERED state: an E_DAILY_LIMIT_EXCEEDED response
- * records today's sent count as the working limit (settings.quota_daily_limit)
- * and the job is re-enqueued for later - an email past the quota stretches
- * out, it never fails. Re-enqueues use a fresh queue message (not retry()) so
- * quota waits never consume the transient-error retry budget.
+ * Inline delivery - a single attempt through Cloudflare Email Service, made
+ * in the request path. There is no send queue: the caller gets Cloudflare's
+ * real answer. Transient conditions (daily cap, rate limit, internal errors)
+ * surface as HTTP errors for the caller to retry - a retried request with the
+ * same idempotency key re-attempts the previously failed message instead of
+ * replaying the failure. Delivery truth (delivered / bounced / complained)
+ * still arrives asynchronously via the events queue (events.ts).
  */
-import {
-  newId,
-  signWebhook,
-  type EventType,
-  type StoredAttachment,
-  type WebhookEvent,
-} from '@postey/shared';
-import type { Bindings, QueueJob } from './types';
+import { newId, signWebhook, type EventType, type WebhookEvent } from '@postey/shared';
+import type { Bindings } from './types';
 
-interface MessageRow {
-  id: string;
-  domain_id: string;
-  from_email: string;
-  from_name: string | null;
-  to_json: string;
-  cc_json: string | null;
-  bcc_json: string | null;
-  reply_to: string | null;
-  subject: string;
-  body_r2_key: string | null;
-  headers_json: string | null;
-  tags_json: string | null;
-  status: string;
-  scheduled_at: number | null;
-  attempts: number;
-}
-
-const TERMINAL = new Set(['delivered', 'partial', 'bounced', 'failed', 'suppressed', 'canceled']);
-const MAX_QUOTA_WAITS = 48; // x1h - a job stuck a full two days past quota fails loudly
 const PERMANENT_CODES = new Set([
   'E_VALIDATION_ERROR',
   'E_FIELD_MISSING',
@@ -56,126 +29,70 @@ const PERMANENT_CODES = new Set([
 
 const today = (): string => new Date().toISOString().slice(0, 10);
 
-export async function deliverBatch(
-  batch: MessageBatch<QueueJob>,
-  env: Bindings,
-  ctx: ExecutionContext
-): Promise<void> {
-  for (const msg of batch.messages) {
-    try {
-      await deliverOne(msg, env, ctx);
-    } catch (err) {
-      console.error(`deliver ${msg.body.messageId} attempt ${msg.attempts} failed:`, err);
-      msg.retry({ delaySeconds: Math.min(60 * msg.attempts, 600) });
-    }
-  }
+/** All we need from an execution context (Hono's and the runtime's both fit). */
+interface WaitCtx {
+  waitUntil(promise: Promise<unknown>): void;
 }
 
-async function deliverOne(
-  msg: Message<QueueJob>,
+const secondsToUtcMidnight = (): number => {
+  const next = new Date();
+  next.setUTCHours(24, 0, 0, 0);
+  return Math.max(60, Math.ceil((next.getTime() - Date.now()) / 1000));
+};
+
+export interface DeliverArgs {
+  id: string;
+  domainId: string;
+  fromEmail: string;
+  fromName: string | null;
+  replyTo: string | null;
+  subject: string;
+  headers: Record<string, string> | null;
+  tagsJson: string | null;
+  /** Live (unsuppressed) recipients only. */
+  lists: { to: string[]; cc: string[]; bcc: string[] };
+  html: string | null;
+  text: string | null;
+  attachments?: {
+    content: ArrayBuffer;
+    filename: string;
+    type: string;
+    disposition: string;
+    contentId?: string;
+  }[];
+}
+
+export type DeliverOutcome =
+  | { kind: 'sent' }
+  | { kind: 'suppressed'; code: string }
+  | { kind: 'error'; http: 422 | 429 | 502; code: string; message: string; retryAfter?: number };
+
+export async function deliverNow(
   env: Bindings,
-  ctx: ExecutionContext
-): Promise<void> {
-  const { messageId } = msg.body;
-  const row = await env.DB.prepare('SELECT * FROM messages WHERE id = ?')
-    .bind(messageId)
-    .first<MessageRow>();
-  if (!row || TERMINAL.has(row.status)) {
-    msg.ack();
-    return;
-  }
-
-  /* Clock skew on scheduled sends: the producer delay lands slightly early. */
-  if (row.scheduled_at && row.scheduled_at > Date.now() + 5000) {
-    const wait = Math.min(Math.ceil((row.scheduled_at - Date.now()) / 1000), 43200);
-    await env.SEND_QUEUE.send({ messageId }, { delaySeconds: wait });
-    msg.ack();
-    return;
-  }
-
-  /* Quota pacing against the discovered daily cap. */
+  ctx: WaitCtx,
+  args: DeliverArgs
+): Promise<DeliverOutcome> {
+  const { lists } = args;
   const day = today();
-  const [limitRow, usageRow] = await Promise.all([
-    env.DB.prepare('SELECT value FROM settings WHERE key = ?')
-      .bind('quota_daily_limit')
-      .first<{ value: string }>(),
-    env.DB.prepare('SELECT sent FROM quota_usage WHERE day = ?')
-      .bind(day)
-      .first<{ sent: number }>(),
-  ]);
-  const limit = limitRow ? Number(limitRow.value) : null;
-  const sentToday = usageRow?.sent ?? 0;
-  if (limit && sentToday >= limit) {
-    await requeueForQuota(env, row, msg, 'daily quota reached (discovered limit)');
-    return;
-  }
-
-  /* Recipients still in play. */
-  const recipients = (
-    await env.DB.prepare(
-      "SELECT address, kind FROM message_recipients WHERE message_id = ? AND status IN ('queued')"
-    )
-      .bind(messageId)
-      .all<{ address: string; kind: 'to' | 'cc' | 'bcc' }>()
-  ).results;
-  if (recipients.length === 0) {
-    await setStatus(env, row, 'suppressed', null, null);
-    msg.ack();
-    return;
-  }
-
-  const body = row.body_r2_key ? await env.BODIES.get(row.body_r2_key) : null;
-  const content = body
-    ? ((await body.json()) as {
-        html: string | null;
-        text: string | null;
-        attachments?: StoredAttachment[];
-      })
-    : { html: null, text: null };
-
-  /* Load attachment binaries from R2. A missing object is a hard failure -
-   * silently sending without a promised attachment would be worse. */
-  let attachments:
-    | { content: ArrayBuffer; filename: string; type: string; disposition: string; contentId?: string }[]
-    | undefined;
-  if (content.attachments?.length) {
-    attachments = [];
-    for (const meta of content.attachments) {
-      const obj = await env.BODIES.get(meta.key);
-      if (!obj) {
-        await setStatus(env, row, 'failed', 'E_ATTACHMENT_MISSING', `${meta.filename} not in storage`);
-        msg.ack();
-        return;
-      }
-      attachments.push({
-        content: await obj.arrayBuffer(),
-        filename: meta.filename,
-        type: meta.type,
-        disposition: meta.disposition,
-        ...(meta.content_id ? { contentId: meta.content_id } : {}),
-      });
-    }
-  }
-
-  await env.DB.prepare("UPDATE messages SET status = 'sending', attempts = attempts + 1 WHERE id = ?")
-    .bind(messageId)
-    .run();
-
-  const lists = { to: [] as string[], cc: [] as string[], bcc: [] as string[] };
-  for (const r of recipients) lists[r.kind].push(r.address);
+  const webhookRow = {
+    id: args.id,
+    subject: args.subject,
+    from_email: args.fromEmail,
+    tags_json: args.tagsJson,
+  };
 
   try {
     const response = await env.EMAIL.send({
       to: lists.to.length ? lists.to : lists.cc.length ? lists.cc : lists.bcc,
       ...(lists.to.length && lists.cc.length ? { cc: lists.cc } : {}),
       ...(lists.bcc.length && (lists.to.length || lists.cc.length) ? { bcc: lists.bcc } : {}),
-      from: { email: row.from_email, ...(row.from_name ? { name: row.from_name } : {}) },
-      ...(row.reply_to ? { replyTo: row.reply_to } : {}),
-      subject: row.subject,
-      ...(content.html ? { html: content.html } : {}),
-      ...(content.text ? { text: content.text } : {}),
-      ...(row.headers_json ? { headers: JSON.parse(row.headers_json) } : {}),
-      ...(attachments?.length ? { attachments } : {}),
+      from: { email: args.fromEmail, ...(args.fromName ? { name: args.fromName } : {}) },
+      ...(args.replyTo ? { replyTo: args.replyTo } : {}),
+      subject: args.subject,
+      ...(args.html ? { html: args.html } : {}),
+      ...(args.text ? { text: args.text } : {}),
+      ...(args.headers ? { headers: args.headers } : {}),
+      ...(args.attachments?.length ? { attachments: args.attachments } : {}),
     });
 
     // 'sent' = accepted by Cloudflare. The real outcome (delivered / bounced /
@@ -185,118 +102,84 @@ async function deliverOne(
     await env.DB.batch([
       env.DB.prepare(
         "UPDATE messages SET status = 'sent', provider_message_id = ?, sent_at = ?, completed_at = ?, error_code = NULL, error_message = NULL WHERE id = ?"
-      ).bind(response?.messageId ?? null, now, now, messageId),
+      ).bind(response?.messageId ?? null, now, now, args.id),
       env.DB.prepare(
         "UPDATE message_recipients SET status = 'sent', updated_at = ? WHERE message_id = ? AND status = 'queued'"
-      ).bind(now, messageId),
+      ).bind(now, args.id),
       env.DB.prepare(
         'INSERT INTO quota_usage (day, sent) VALUES (?, 1) ON CONFLICT(day) DO UPDATE SET sent = sent + 1'
       ).bind(day),
-      eventStmt(env, messageId, 'sent', null),
+      eventStmt(env, args.id, 'sent', null),
     ]);
-    await dispatchWebhooks(env, ctx, row, 'sent');
-    msg.ack();
+    await dispatchWebhooks(env, ctx, webhookRow, 'sent');
+    return { kind: 'sent' };
   } catch (raw) {
     const err = raw as Error & { code?: string };
     const code = err.code ?? 'E_UNKNOWN';
 
     if (code === 'E_DAILY_LIMIT_EXCEEDED') {
-      // Learn the cap: today's successful count IS the effective limit.
-      await env.DB.batch([
-        env.DB.prepare(
-          "INSERT INTO settings (key, value) VALUES ('quota_daily_limit', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-        ).bind(String(Math.max(sentToday, 1))),
-        env.DB.prepare(
-          'INSERT INTO quota_usage (day, rejected) VALUES (?, 1) ON CONFLICT(day) DO UPDATE SET rejected = rejected + 1'
-        ).bind(day),
-      ]);
-      await requeueForQuota(env, row, msg, 'Cloudflare daily sending limit reached');
-      return;
+      await env.DB.prepare(
+        'INSERT INTO quota_usage (day, rejected) VALUES (?, 1) ON CONFLICT(day) DO UPDATE SET rejected = rejected + 1'
+      )
+        .bind(day)
+        .run();
+      await setStatus(env, args.id, 'failed', code, err.message);
+      await dispatchWebhooks(env, ctx, webhookRow, 'failed');
+      return {
+        kind: 'error',
+        http: 429,
+        code,
+        message: 'Cloudflare daily sending limit reached - retry after midnight UTC',
+        retryAfter: secondsToUtcMidnight(),
+      };
     }
 
     if (code === 'E_RATE_LIMIT_EXCEEDED') {
-      await env.DB.prepare("UPDATE messages SET status = 'queued' WHERE id = ?")
-        .bind(messageId)
-        .run();
-      await env.SEND_QUEUE.send({ messageId }, { delaySeconds: 300 });
-      msg.ack();
-      return;
+      await setStatus(env, args.id, 'failed', code, err.message);
+      return {
+        kind: 'error',
+        http: 429,
+        code,
+        message: 'Cloudflare sending rate limit reached - retry shortly',
+        retryAfter: 300,
+      };
     }
 
     if (code === 'E_RECIPIENT_SUPPRESSED') {
       // Cloudflare's own suppression list refused a recipient. With one
       // recipient we know exactly who - mirror it into our list.
       const now = Date.now();
-      if (recipients.length === 1) {
+      const only = [...lists.to, ...lists.cc, ...lists.bcc];
+      if (only.length === 1) {
         await env.DB.prepare(
           'INSERT INTO suppressions (id, domain_id, address, reason, source_message_id, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING'
         )
-          .bind(newId('sup'), null, recipients[0].address, 'hard_bounce', messageId, now)
+          .bind(newId('sup'), null, only[0], 'hard_bounce', args.id, now)
           .run();
       }
-      await setStatus(env, row, 'suppressed', code, err.message);
-      await dispatchWebhooks(env, ctx, row, 'suppressed');
-      msg.ack();
-      return;
-    }
-
-    if (code === 'E_DELIVERY_FAILED') {
-      if (msg.attempts >= 5) {
-        await setStatus(env, row, 'bounced', code, err.message);
-        await dispatchWebhooks(env, ctx, row, 'bounced');
-        msg.ack();
-      } else {
-        msg.retry({ delaySeconds: Math.min(120 * msg.attempts, 900) });
-      }
-      return;
+      await setStatus(env, args.id, 'suppressed', code, err.message);
+      await dispatchWebhooks(env, ctx, webhookRow, 'suppressed');
+      return { kind: 'suppressed', code };
     }
 
     if (PERMANENT_CODES.has(code)) {
       if (code === 'E_SENDER_NOT_VERIFIED' || code === 'E_SENDER_DOMAIN_NOT_AVAILABLE') {
         await env.DB.prepare("UPDATE domains SET status = 'pending' WHERE id = ?")
-          .bind(row.domain_id)
+          .bind(args.domainId)
           .run()
           .catch(() => undefined);
       }
-      await setStatus(env, row, 'failed', code, err.message);
-      await dispatchWebhooks(env, ctx, row, 'failed');
-      msg.ack();
-      return;
+      await setStatus(env, args.id, 'failed', code, err.message);
+      await dispatchWebhooks(env, ctx, webhookRow, 'failed');
+      return { kind: 'error', http: 422, code, message: err.message };
     }
 
-    /* Unknown / E_INTERNAL_SERVER_ERROR: transient until the retry budget runs out. */
-    if (msg.attempts >= 5) {
-      await setStatus(env, row, 'failed', code, err.message);
-      await dispatchWebhooks(env, ctx, row, 'failed');
-      msg.ack();
-    } else {
-      await env.DB.prepare("UPDATE messages SET status = 'queued' WHERE id = ?")
-        .bind(messageId)
-        .run();
-      msg.retry({ delaySeconds: Math.min(60 * msg.attempts, 600) });
-    }
+    /* E_DELIVERY_FAILED, E_INTERNAL_SERVER_ERROR, unknown: the caller retries
+     * (safely, thanks to idempotency keys re-attempting failed messages). */
+    await setStatus(env, args.id, 'failed', code, err.message);
+    await dispatchWebhooks(env, ctx, webhookRow, 'failed');
+    return { kind: 'error', http: 502, code, message: err.message };
   }
-}
-
-async function requeueForQuota(
-  env: Bindings,
-  row: MessageRow,
-  msg: Message<QueueJob>,
-  reason: string
-): Promise<void> {
-  if (row.attempts >= MAX_QUOTA_WAITS) {
-    await setStatus(env, row, 'failed', 'E_QUOTA_WAIT_EXHAUSTED', reason);
-    msg.ack();
-    return;
-  }
-  await env.DB.batch([
-    env.DB.prepare(
-      "UPDATE messages SET status = 'queued', attempts = attempts + 1 WHERE id = ?"
-    ).bind(row.id),
-    eventStmt(env, row.id, 'rate_limited', JSON.stringify({ reason })),
-  ]);
-  await env.SEND_QUEUE.send({ messageId: row.id }, { delaySeconds: 3600 });
-  msg.ack();
 }
 
 function eventStmt(
@@ -312,7 +195,7 @@ function eventStmt(
 
 async function setStatus(
   env: Bindings,
-  row: MessageRow,
+  messageId: string,
   status: string,
   code: string | null,
   message: string | null
@@ -321,20 +204,14 @@ async function setStatus(
   await env.DB.batch([
     env.DB.prepare(
       'UPDATE messages SET status = ?, error_code = ?, error_message = ?, completed_at = ? WHERE id = ?'
-    ).bind(status, code, message ? message.slice(0, 500) : null, now, row.id),
+    ).bind(status, code, message ? message.slice(0, 500) : null, now, messageId),
     env.DB.prepare(
       "UPDATE message_recipients SET status = ?, error = ?, updated_at = ? WHERE message_id = ? AND status IN ('queued')"
-    ).bind(status === 'delivered' ? 'delivered' : status, code, now, row.id),
+    ).bind(status, code, now, messageId),
     eventStmt(
       env,
-      row.id,
-      status === 'bounced'
-        ? 'bounced'
-        : status === 'suppressed'
-          ? 'suppressed'
-          : status === 'delivered'
-            ? 'delivered'
-            : 'failed',
+      messageId,
+      status === 'suppressed' ? 'suppressed' : 'failed',
       code ? JSON.stringify({ code }) : null
     ),
   ]);
@@ -344,8 +221,8 @@ async function setStatus(
 
 export async function dispatchWebhooks(
   env: Bindings,
-  ctx: ExecutionContext,
-  row: Pick<MessageRow, 'id' | 'subject' | 'from_email' | 'tags_json'>,
+  ctx: WaitCtx,
+  row: { id: string; subject: string; from_email: string; tags_json: string | null },
   event: EventType,
   extra?: { recipient?: string; detail?: string }
 ): Promise<void> {

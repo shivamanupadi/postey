@@ -395,40 +395,4 @@ app.get('/webhooks/:id/deliveries', async c => {
   return c.json({ data: rows.results });
 });
 
-/* ── settings ────────────────────────────────────────────────────── */
-
-const SETTING_WHITELIST = new Set([
-  'retention_days',
-  'default_from',
-  'inbound_forward',
-  'quota_daily_limit',
-]);
-
-app.get('/settings', async c => {
-  const rows = await c.env.DB.prepare('SELECT key, value FROM settings').all<{
-    key: string;
-    value: string;
-  }>();
-  return c.json({ data: Object.fromEntries(rows.results.map(r => [r.key, r.value])) });
-});
-
-app.put(
-  '/settings',
-  zValidator('json', z.record(z.string().max(64), z.string().max(500).nullable())),
-  async c => {
-    const entries = Object.entries(c.req.valid('json')).filter(([k]) => SETTING_WHITELIST.has(k));
-    if (!entries.length) return c.json({ error: 'No recognized settings' }, 400);
-    await c.env.DB.batch(
-      entries.map(([key, value]) =>
-        value === null || value === ''
-          ? c.env.DB.prepare('DELETE FROM settings WHERE key = ?').bind(key)
-          : c.env.DB.prepare(
-              'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
-            ).bind(key, value)
-      )
-    );
-    return c.json({ data: { ok: true } });
-  }
-);
-
 export const resourcesRoute = app;

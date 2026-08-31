@@ -24,7 +24,6 @@ interface OverviewData {
   byStatus: Record<string, number>;
   suppressions: number;
   activeDomains: number;
-  quotaDailyLimit: number | null;
   daily: { day: string; n: number }[];
   queuedNow: number;
   lastSendAt: number | null;

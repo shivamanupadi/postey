@@ -13,7 +13,6 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as DomainsRouteImport } from './routes/domains'
 import { Route as KeysRouteImport } from './routes/keys'
 import { Route as LoginRouteImport } from './routes/login'
-import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SuppressionsRouteImport } from './routes/suppressions'
 import { Route as TemplatesRouteImport } from './routes/templates'
 import { Route as WebhooksRouteImport } from './routes/webhooks'
@@ -38,11 +37,6 @@ const KeysRoute = KeysRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SuppressionsRoute = SuppressionsRouteImport.update({
@@ -76,7 +70,6 @@ export interface FileRoutesByFullPath {
   '/domains': typeof DomainsRoute
   '/keys': typeof KeysRoute
   '/login': typeof LoginRoute
-  '/settings': typeof SettingsRoute
   '/suppressions': typeof SuppressionsRoute
   '/templates': typeof TemplatesRoute
   '/webhooks': typeof WebhooksRoute
@@ -88,7 +81,6 @@ export interface FileRoutesByTo {
   '/domains': typeof DomainsRoute
   '/keys': typeof KeysRoute
   '/login': typeof LoginRoute
-  '/settings': typeof SettingsRoute
   '/suppressions': typeof SuppressionsRoute
   '/templates': typeof TemplatesRoute
   '/webhooks': typeof WebhooksRoute
@@ -101,7 +93,6 @@ export interface FileRoutesById {
   '/domains': typeof DomainsRoute
   '/keys': typeof KeysRoute
   '/login': typeof LoginRoute
-  '/settings': typeof SettingsRoute
   '/suppressions': typeof SuppressionsRoute
   '/templates': typeof TemplatesRoute
   '/webhooks': typeof WebhooksRoute
@@ -115,7 +106,6 @@ export interface FileRouteTypes {
     | '/domains'
     | '/keys'
     | '/login'
-    | '/settings'
     | '/suppressions'
     | '/templates'
     | '/webhooks'
@@ -127,7 +117,6 @@ export interface FileRouteTypes {
     | '/domains'
     | '/keys'
     | '/login'
-    | '/settings'
     | '/suppressions'
     | '/templates'
     | '/webhooks'
@@ -139,7 +128,6 @@ export interface FileRouteTypes {
     | '/domains'
     | '/keys'
     | '/login'
-    | '/settings'
     | '/suppressions'
     | '/templates'
     | '/webhooks'
@@ -152,7 +140,6 @@ export interface RootRouteChildren {
   DomainsRoute: typeof DomainsRoute
   KeysRoute: typeof KeysRoute
   LoginRoute: typeof LoginRoute
-  SettingsRoute: typeof SettingsRoute
   SuppressionsRoute: typeof SuppressionsRoute
   TemplatesRoute: typeof TemplatesRoute
   WebhooksRoute: typeof WebhooksRoute
@@ -188,13 +175,6 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/suppressions': {
@@ -240,7 +220,6 @@ const rootRouteChildren: RootRouteChildren = {
   DomainsRoute: DomainsRoute,
   KeysRoute: KeysRoute,
   LoginRoute: LoginRoute,
-  SettingsRoute: SettingsRoute,
   SuppressionsRoute: SuppressionsRoute,
   TemplatesRoute: TemplatesRoute,
   WebhooksRoute: WebhooksRoute,

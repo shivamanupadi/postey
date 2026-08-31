@@ -22,14 +22,9 @@ export interface EmailBinding {
   }): Promise<{ messageId?: string }>;
 }
 
-export interface QueueJob {
-  messageId: string;
-}
-
 export type Bindings = {
   DB: D1Database;
   BODIES: R2Bucket;
-  SEND_QUEUE: Queue<QueueJob>;
   EMAIL: EmailBinding;
   ENVIRONMENT: string;
 };

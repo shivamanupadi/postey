@@ -7,7 +7,6 @@ import {
   Inbox,
   KeyRound,
   LayoutTemplate,
-  Settings,
   ShieldOff,
   Sparkles,
   UserRound,
@@ -49,7 +48,6 @@ const SECTIONS: { label: string | null; items: NavItem[] }[] = [
     items: [
       { to: '/suppressions', label: 'Suppressions', icon: ShieldOff, countKey: 'suppressions' },
       { to: '/webhooks', label: 'Webhooks', icon: Webhook },
-      { to: '/settings', label: 'Settings', icon: Settings },
     ],
   },
 ];

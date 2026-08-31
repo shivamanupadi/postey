@@ -1,11 +1,9 @@
 /**
  * Postey inbound worker - Email Routing handler for replies and unsubscribes.
  *
- * Route mail here with an Email Routing rule on your sending domain. Two jobs:
- *  1. unsubscribe@<domain> (and List-Unsubscribe one-click posts routed as
- *     mail) suppress the sender for future sends.
- *  2. Everything else is forwarded to the verified address configured in
- *     settings.inbound_forward, when one is set.
+ * Route mail here with an Email Routing rule on your sending domain.
+ * unsubscribe@<domain> (and List-Unsubscribe one-click posts routed as mail)
+ * suppress the sender for future sends; everything else is rejected.
  */
 import { newId } from '@postey/shared';
 
@@ -30,20 +28,8 @@ export default {
       return; // acknowledged; no forward for unsubscribe mail
     }
 
-    const forward = await env.DB.prepare('SELECT value FROM settings WHERE key = ?')
-      .bind('inbound_forward')
-      .first<{ value: string }>()
-      .catch(() => null);
-    if (forward?.value) {
-      try {
-        await message.forward(forward.value);
-        return;
-      } catch (err) {
-        console.error(`forward to ${forward.value} failed:`, err);
-      }
-    }
-    // No forward configured (or it failed): reject so the sender learns the
-    // mailbox is unattended instead of the message silently vanishing.
+    // Reject so the sender learns the mailbox is unattended instead of the
+    // message silently vanishing.
     message.setReject('This address is not monitored');
   },
 };

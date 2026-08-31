@@ -1,7 +1,8 @@
-# Postey send worker - the public, API-key-authenticated send API plus the
-# queue consumer that delivers through Cloudflare Email Service. In customer
-# accounts this is provisioned by the deploy wizard (names/ids injected); this
-# file exists for local dev and for building the release bundle.
+# Postey send worker - the public, API-key-authenticated send API. Delivery
+# is inline through Cloudflare Email Service; the only queue is the events
+# consumer for delivery lifecycle events. In customer accounts this is
+# provisioned by the deploy wizard (names/ids injected); this file exists for
+# local dev and for building the release bundle.
 name = "postey-send-dev"
 main = "src/index.ts"
 compatibility_date = "2026-08-01"
@@ -16,16 +17,6 @@ migrations_dir = "../api/src/db/migrations"
 [[r2_buckets]]
 binding = "BODIES"
 bucket_name = "postey-bodies-dev"
-
-[[queues.producers]]
-binding = "SEND_QUEUE"
-queue = "postey-send-dev"
-
-[[queues.consumers]]
-queue = "postey-send-dev"
-max_batch_size = 10
-max_retries = 5
-max_batch_timeout = 2
 
 # Email Sending lifecycle events land here via a Queues event subscription
 # (created by the deploy wizard; the queue name must contain "events").

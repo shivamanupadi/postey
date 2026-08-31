@@ -6,7 +6,7 @@
  * for the duration of the request and are never persisted or logged.
  *
  * Postey-specific legs beyond the Traks engine:
- *  - a Queue (send pipeline) with the send worker attached as consumer,
+ *  - a Queue (delivery events) with the send worker attached as consumer,
  *  - the send_email binding on the send worker,
  *  - Email Sending domain onboarding: best-effort enable calls, then DNS
  *    polling for the locked cf-bounce records (there is no stable public
@@ -67,8 +67,8 @@ export function instanceNames(instance: string) {
     inboundWorker: `${instance}-inbound`,
     d1: `${instance}-db`,
     bucket: `${instance}-bodies`,
+    /** Legacy send queue - no longer provisioned, still torn down on destroy. */
     queue: `${instance}-send-queue`,
-    /** "events" must appear in the name - the send worker routes on it. */
     eventsQueue: `${instance}-events-queue`,
   };
 }
@@ -246,8 +246,8 @@ async function ensureQueue(
   ctx: EngineCtx,
   cf: Cf,
   queueName: string,
-  stepId = 'queue',
-  label = 'Create send queue'
+  stepId: string,
+  label: string
 ): Promise<string> {
   return step(ctx, stepId, label, async () => {
     try {
@@ -546,7 +546,6 @@ export async function provisionInstance(ctx: EngineCtx): Promise<ProvisionResult
   await applyMigrations(ctx, cf, d1Id);
   await seedSendingDomain(ctx, cf, d1Id);
   await ensureBucket(ctx, cf, N.bucket);
-  const queueId = await ensureQueue(ctx, cf, N.queue);
   const eventsQueueId = await ensureQueue(
     ctx,
     cf,
@@ -563,12 +562,10 @@ export async function provisionInstance(ctx: EngineCtx): Promise<ProvisionResult
       bindings: [
         { type: 'd1', name: 'DB', id: d1Id },
         { type: 'r2_bucket', name: 'BODIES', bucket_name: N.bucket },
-        { type: 'queue', name: 'SEND_QUEUE', queue_name: N.queue },
         { type: 'send_email', name: 'EMAIL' },
         { type: 'plain_text', name: 'ENVIRONMENT', text: 'production' },
       ],
     });
-    await attachConsumer(ctx, cf, queueId, N.sendWorker);
     await attachConsumer(ctx, cf, eventsQueueId, N.sendWorker);
   });
 
