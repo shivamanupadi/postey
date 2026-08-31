@@ -44,16 +44,16 @@ function Overview(): ReactElement {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
           label="Sent today"
-          value={String(d?.sentToday ?? '—')}
+          value={String(d?.sentToday ?? '-')}
           hint={
             d?.quotaDailyLimit
               ? `discovered daily cap: ${d.quotaDailyLimit}`
               : 'daily cap not yet discovered'
           }
         />
-        <Stat label="Last 7 days" value={String(d?.last7d ?? '—')} />
-        <Stat label="Active domains" value={String(d?.activeDomains ?? '—')} />
-        <Stat label="Suppressions" value={String(d?.suppressions ?? '—')} />
+        <Stat label="Last 7 days" value={String(d?.last7d ?? '-')} />
+        <Stat label="Active domains" value={String(d?.activeDomains ?? '-')} />
+        <Stat label="Suppressions" value={String(d?.suppressions ?? '-')} />
       </div>
       {d?.quotaDailyLimit != null && d.sentToday >= d.quotaDailyLimit && (
         <p className="rounded-xl bg-warn-soft px-4 py-3 text-sm leading-relaxed text-warn">

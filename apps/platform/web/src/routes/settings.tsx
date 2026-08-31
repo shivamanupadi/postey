@@ -67,8 +67,8 @@ function SettingsPage(): ReactElement {
         <dl className="space-y-2 text-sm">
           {[
             ['Version', config.data?.version ?? 'dev'],
-            ['Send API', config.data?.sendUrl ?? '—'],
-            ['Sending domain', config.data?.sendingDomain ?? '—'],
+            ['Send API', config.data?.sendUrl ?? '-'],
+            ['Sending domain', config.data?.sendingDomain ?? '-'],
           ].map(([k, v]) => (
             <div key={k} className="flex gap-3">
               <dt className="w-36 shrink-0 text-xs font-semibold uppercase tracking-wide text-ink-soft">

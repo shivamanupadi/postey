@@ -106,7 +106,7 @@ export function SiteChrome({ children }: { children: ReactNode }): ReactElement 
                     rel="noreferrer"
                     className="hover:text-ink"
                   >
-                    Traks — analytics
+                    Traks - analytics
                   </a>
                 </li>
               </ul>

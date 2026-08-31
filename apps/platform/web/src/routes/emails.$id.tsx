@@ -121,7 +121,7 @@ function EmailDetail(): ReactElement {
               <td className="px-4 py-2.5">
                 <Badge status={r.status} />
               </td>
-              <td className="px-4 py-2.5 font-mono text-xs text-ink-soft">{r.error ?? '—'}</td>
+              <td className="px-4 py-2.5 font-mono text-xs text-ink-soft">{r.error ?? '-'}</td>
             </tr>
           ))}
         </Table>

@@ -10,11 +10,11 @@ dashboard into the customer's account.
 ```
 apps/
   home/
-    web        postey.app marketing site + deploy wizard UI (this exists first —
+    web        postey.app marketing site + deploy wizard UI (this exists first -
                it defines the product scope)
     api        deploy wizard backend, instance registry, release manifests
   platform/    what gets installed into the customer's Cloudflare account
-    api        dashboard API — Better Auth, D1, domains, API keys, templates, logs
+    api        dashboard API - Better Auth, D1, domains, API keys, templates, logs
     send       public send API worker (Resend-compatible REST) → Queues → Email Service
     inbound    Email Routing email() handler: replies, unsubscribes, inbound webhooks
     web        dashboard SPA
@@ -26,22 +26,22 @@ installer/         build-release / upload-release / release tooling (Traks patte
 
 ## Product scope
 
-**v1 — transactional.** Cloudflare Email Service (beta, Workers Paid: 3,000
+**v1 - transactional.** Cloudflare Email Service (beta, Workers Paid: 3,000
 emails/mo included, then $0.35/1k) does delivery, DKIM/ARC signing, and IP
 reputation. Postey adds the product layer it lacks: Resend-compatible REST API,
 API keys, idempotency, scheduled sends, quota-aware queueing (the CF daily cap
-is reputation-gated and opaque — learned from 429s, never dropped), email log
+is reputation-gated and opaque - learned from 429s, never dropped), email log
 with rendered previews, templates, suppression list (auto-fed from the send
 API's per-recipient bounce response), outbound webhooks, inbound routing.
 
-**v2 — newsletters.** Subscribers, double opt-in, segments, campaigns,
+**v2 - newsletters.** Subscribers, double opt-in, segments, campaigns,
 open/click analytics, one-click unsubscribe. Bulk sends go through a pluggable
-provider (Amazon SES first — CF Email Service is transactional-only until
+provider (Amazon SES first - CF Email Service is transactional-only until
 their bulk tooling ships).
 
 ## Install constraints (wizard)
 
-- Requires the Workers Paid plan — the wizard verifies the subscription before
+- Requires the Workers Paid plan - the wizard verifies the subscription before
   proceeding.
 - Domain onboarding to Email Sending has **no public API yet** (dashboard-only
   while in beta). The wizard automates everything else, deep-links the one

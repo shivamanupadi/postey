@@ -31,7 +31,7 @@ const V1_FEATURES: { icon: ReactNode; title: string; body: string }[] = [
   {
     icon: <ScrollText />,
     title: 'Email log & previews',
-    body: 'Every send recorded with per-recipient status, full headers, and the rendered HTML — searchable, with configurable retention.',
+    body: 'Every send recorded with per-recipient status, full headers, and the rendered HTML - searchable, with configurable retention.',
   },
   {
     icon: <LayoutTemplate />,
@@ -51,12 +51,12 @@ const V1_FEATURES: { icon: ReactNode; title: string; body: string }[] = [
   {
     icon: <CalendarClock />,
     title: 'Scheduled & idempotent sends',
-    body: 'Schedule delivery for later and retry requests safely — idempotency keys guarantee an email is sent exactly once.',
+    body: 'Schedule delivery for later and retry requests safely - idempotency keys guarantee an email is sent exactly once.',
   },
   {
     icon: <Gauge />,
     title: 'Quota-aware queueing',
-    body: "Cloudflare's daily sending cap is reputation-gated and opaque. Postey learns it from rate-limit responses, backs off, and re-queues — emails stretch out, never fail.",
+    body: "Cloudflare's daily sending cap is reputation-gated and opaque. Postey learns it from rate-limit responses, backs off, and re-queues - emails stretch out, never fail.",
   },
   {
     icon: <KeyRound />,
@@ -71,12 +71,12 @@ const V1_FEATURES: { icon: ReactNode; title: string; body: string }[] = [
   {
     icon: <Inbox />,
     title: 'Inbound routing',
-    body: 'Replies and unsubscribe mailboxes route into a Worker via Email Routing — forward them, webhook them, or handle them in code.',
+    body: 'Replies and unsubscribe mailboxes route into a Worker via Email Routing - forward them, webhook them, or handle them in code.',
   },
   {
     icon: <FlaskConical />,
     title: 'Free test mode',
-    body: 'Sends to verified addresses in your account are always free and quota-exempt — perfect for staging and CI.',
+    body: 'Sends to verified addresses in your account are always free and quota-exempt - perfect for staging and CI.',
   },
   {
     icon: <Database />,
@@ -88,7 +88,7 @@ const V1_FEATURES: { icon: ReactNode; title: string; body: string }[] = [
 const V2_FEATURES: { title: string; body: string }[] = [
   {
     title: 'Subscribers & lists',
-    body: 'Import, segment, and manage audiences in your own D1 — no per-subscriber pricing, ever.',
+    body: 'Import, segment, and manage audiences in your own D1 - no per-subscriber pricing, ever.',
   },
   {
     title: 'Double opt-in',
@@ -108,7 +108,7 @@ const V2_FEATURES: { title: string; body: string }[] = [
   },
   {
     title: 'Pluggable bulk sender',
-    body: 'Cloudflare Email Service is transactional-only today, so campaigns ship through Amazon SES ($0.10/1k) — and switch to Cloudflare-native the day their bulk sending goes live.',
+    body: 'Cloudflare Email Service is transactional-only today, so campaigns ship through Amazon SES ($0.10/1k) - and switch to Cloudflare-native the day their bulk sending goes live.',
   },
 ];
 
@@ -133,7 +133,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'Can I send newsletters through Cloudflare?',
-    a: 'Not yet — Cloudflare Email Service currently allows transactional email only. Postey v2 ships campaigns through a pluggable provider (Amazon SES first) and will move to Cloudflare-native bulk sending when it launches.',
+    a: 'Not yet - Cloudflare Email Service currently allows transactional email only. Postey v2 ships campaigns through a pluggable provider (Amazon SES first) and will move to Cloudflare-native bulk sending when it launches.',
   },
   {
     q: 'Does any of my data leave my account?',
@@ -141,7 +141,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'How do updates work?',
-    a: 'Same model as Traks: prebuilt, versioned releases. Your instance checks the registry and applies updates (worker bundles + D1 migrations) with one click — a failed update never takes down a live instance.',
+    a: 'Same model as Traks: prebuilt, versioned releases. Your instance checks the registry and applies updates (worker bundles + D1 migrations) with one click - a failed update never takes down a live instance.',
   },
 ];
 
@@ -222,7 +222,7 @@ function Landing(): ReactElement {
   return (
     <SiteChrome>
       <main>
-      {/* Hero — centered, openseo-style */}
+      {/* Hero - centered, openseo-style */}
       <section className="px-5 pb-24 pt-20 text-center sm:pt-28">
         <div className="mx-auto max-w-4xl">
           <span className="inline-flex items-center gap-2 rounded-full border border-line bg-white/55 px-3.5 py-1.5 text-[13px] font-medium text-ink-soft">
@@ -233,8 +233,8 @@ function Landing(): ReactElement {
             The email platform you actually own.
           </h1>
           <p className="mx-auto mt-7 max-w-xl text-lg leading-relaxed text-ink-soft">
-            Postey installs a complete transactional email platform — API, logs, templates,
-            suppressions, webhooks — into your own Cloudflare account. No middleman, no
+            Postey installs a complete transactional email platform - API, logs, templates,
+            suppressions, webhooks - into your own Cloudflare account. No middleman, no
             per-subscriber pricing, no data leaving your infrastructure.
           </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
@@ -291,7 +291,7 @@ function Landing(): ReactElement {
           <SectionTitle
             kicker="Install"
             title="Yours in about five minutes"
-            body="The deploy wizard provisions everything into your account — the same model that powers Traks installs."
+            body="The deploy wizard provisions everything into your account - the same model that powers Traks installs."
           />
           <div className="mt-12 grid gap-5 md:grid-cols-3">
             {[
@@ -303,7 +303,7 @@ function Landing(): ReactElement {
               {
                 n: '02',
                 title: 'Provision & onboard',
-                body: 'Workers, D1, Queues, and R2 deploy automatically. One deep-linked click onboards your domain to Email Sending — SPF, DKIM, and DMARC records are created and locked for you.',
+                body: 'Workers, D1, Queues, and R2 deploy automatically. One deep-linked click onboards your domain to Email Sending - SPF, DKIM, and DMARC records are created and locked for you.',
               },
               {
                 n: '03',
@@ -351,14 +351,14 @@ function Landing(): ReactElement {
         </div>
       </section>
 
-      {/* Newsletters roadmap — dark band */}
+      {/* Newsletters roadmap - dark band */}
       <section id="newsletters" className="bg-ink-deep py-24">
         <div className="mx-auto max-w-6xl px-5">
           <SectionTitle
             light
             kicker="v2 · On the roadmap"
             title="Newsletters without the subscriber tax"
-            body="Hosted platforms bill by list size: 10,000 subscribers runs $109/mo on beehiiv and $139/mo on Kit — while the actual sending costs a few dollars. Postey bills you nothing; you pay only provider usage."
+            body="Hosted platforms bill by list size: 10,000 subscribers runs $109/mo on beehiiv and $139/mo on Kit - while the actual sending costs a few dollars. Postey bills you nothing; you pay only provider usage."
           />
           <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {V2_FEATURES.map(f => (
@@ -370,7 +370,7 @@ function Landing(): ReactElement {
           </div>
           <p className="mt-10 text-center font-mono text-sm text-cream/50">
             10,000 subscribers × 4 sends/mo ≈ <span className="text-[#ff8fa3]">$19/mo</span> in
-            usage — vs $109–139/mo hosted
+            usage - vs $109–139/mo hosted
           </p>
         </div>
       </section>
@@ -381,7 +381,7 @@ function Landing(): ReactElement {
           <SectionTitle
             kicker="Architecture"
             title="Four workers, zero servers"
-            body="Everything runs on Cloudflare primitives inside your account — the same hot/cold data design proven in Traks."
+            body="Everything runs on Cloudflare primitives inside your account - the same hot/cold data design proven in Traks."
           />
           <div className="mt-12 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             {[
@@ -398,7 +398,7 @@ function Landing(): ReactElement {
               {
                 name: 'api + web',
                 role: 'Dashboard',
-                body: 'Better Auth sessions, domains, keys, templates, logs, and webhook config — metadata in D1, bodies in R2.',
+                body: 'Better Auth sessions, domains, keys, templates, logs, and webhook config - metadata in D1, bodies in R2.',
               },
               {
                 name: 'inbound',
@@ -427,7 +427,7 @@ function Landing(): ReactElement {
           <SectionTitle
             kicker="Pricing"
             title="Postey is software, not a middleman"
-            body="The platform is yours to run. You pay Cloudflare for usage — nothing to us per email, per subscriber, or per seat."
+            body="The platform is yours to run. You pay Cloudflare for usage - nothing to us per email, per subscriber, or per seat."
           />
           <div className="mt-12 overflow-hidden rounded-2xl border border-line-soft bg-white shadow-[0_1px_2px_rgba(30,25,18,0.04)]">
             <table className="w-full text-left text-sm">
@@ -453,7 +453,7 @@ function Landing(): ReactElement {
           </div>
           <p className="mt-4 text-center text-xs text-ink-soft">
             Approximate published pricing, August 2026. Postey = $5/mo Workers Paid plan + $0.35 per
-            1,000 emails after the 3,000 included. The real difference isn't the bill — it's that
+            1,000 emails after the 3,000 included. The real difference isn't the bill - it's that
             your logs, lists, and reputation are yours.
           </p>
         </div>

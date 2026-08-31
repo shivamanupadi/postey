@@ -27,7 +27,7 @@ export const api = {
 };
 
 export const fmtTime = (ms: number | null | undefined): string =>
-  ms ? new Date(ms).toLocaleString() : '—';
+  ms ? new Date(ms).toLocaleString() : '-';
 
 export const STATUS_COLORS: Record<string, string> = {
   delivered: 'bg-ok-soft text-ok',
