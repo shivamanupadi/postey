@@ -135,6 +135,16 @@ function EmailsPage(): ReactElement {
   const setStatus = (s: string): void =>
     void navigate({ search: s ? { status: s } : {}, replace: true });
 
+  const filtersActive = Boolean(q || domainId || templateId || status || dateKey !== '30d');
+  const resetFilters = (): void => {
+    setQ('');
+    setQDebounced('');
+    setDateKey('30d');
+    setDomainId('');
+    setTemplateId('');
+    setStatus('');
+  };
+
   return (
     <div className="mx-auto max-w-5xl space-y-4">
       <PageHeader title="Emails" sub="Every send with its status and delivery timeline." />
@@ -183,6 +193,15 @@ function EmailsPage(): ReactElement {
             onClick={() => setStatus(s)}
           />
         ))}
+        {filtersActive && (
+          <button
+            type="button"
+            onClick={resetFilters}
+            className="ml-auto rounded-full px-3 py-1 text-xs font-medium text-accent transition hover:bg-accent-soft"
+          >
+            Reset filters
+          </button>
+        )}
       </div>
 
       {rows.length > 0 ? (
