@@ -289,21 +289,22 @@ function DeployWizard(): ReactElement {
       progress={{ current: PHASE_INDEX[phase], total: 5 }}
     >
       {phase === 'intro' && (
-        <Card
-          footer={
-            <>
-              <BackButton onClick={() => void navigate({ to: '/' })} label="Back to postey.app" />
-              <PrimaryButton onClick={() => void begin()} busy={busy}>
-                Get started
-                <ArrowRight className="h-4 w-4" />
-              </PrimaryButton>
-            </>
-          }
-        >
-          <CardTitle
-            title="Deploy Postey to your Cloudflare account"
-            sub="Here's what will happen"
-          />
+        <Card>
+          <div className="mb-1 flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-[17px] font-semibold tracking-tight text-ink">
+                Deploy Postey to your Cloudflare account
+              </h2>
+              <p className="mt-1 text-[13px] leading-relaxed text-ink-soft">
+                Here's what will happen
+              </p>
+            </div>
+            <PrimaryButton onClick={() => void begin()} busy={busy}>
+              Get started
+              <ArrowRight className="h-4 w-4" />
+            </PrimaryButton>
+          </div>
+          <div className="mb-4" />
           {error && <ErrorBox>{error}</ErrorBox>}
           <div className="space-y-2.5">
             {[

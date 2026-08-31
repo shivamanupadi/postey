@@ -192,6 +192,13 @@ export function WizardShell({
           WebkitMaskImage: 'linear-gradient(to bottom, black 0%, transparent 65%)',
         }}
       />
+      <a
+        href="/"
+        className="fixed left-4 top-4 z-10 inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12.5px] font-semibold text-ink-soft transition hover:bg-white hover:text-ink hover:shadow-sm"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" />
+        postey.app
+      </a>
       <div className="relative">
         <div className="mb-7 flex flex-col items-center">
           <a href="/" aria-label="Back to postey.app" className="transition-transform hover:scale-105">
