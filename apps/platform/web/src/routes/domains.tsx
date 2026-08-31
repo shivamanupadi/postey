@@ -6,12 +6,13 @@ import { api, fmtTime } from '@/lib/api';
 import {
   Badge,
   Button,
-  Card,
   ConfirmDialog,
   Drawer,
   Empty,
   ErrorNote,
+  Field,
   Input,
+  Modal,
   PageHeader,
   Table,
 } from '@/lib/ui';
@@ -163,6 +164,7 @@ function DomainsPage(): ReactElement {
     queryFn: () => api.get<DomainRow[]>('/api/domains'),
   });
   const [name, setName] = useState('');
+  const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState<DomainRow | null>(null);
   const [archiving, setArchiving] = useState<DomainRow | null>(null);
   const [inspecting, setInspecting] = useState<DomainRow | null>(null);
@@ -172,6 +174,7 @@ function DomainsPage(): ReactElement {
     mutationFn: () => api.post('/api/domains', { name }),
     onSuccess: () => {
       setName('');
+      setAdding(false);
       refresh();
     },
   });
@@ -204,28 +207,19 @@ function DomainsPage(): ReactElement {
       <PageHeader
         title="Domains"
         sub="Domains this instance may send from. Each needs Email Sending onboarding on Cloudflare's side."
-      />
-      <Card title="Add a sending domain">
-        <form onSubmit={submit} className="flex gap-3">
-          <Input placeholder="mail.example.com" value={name} onChange={e => setName(e.target.value)} />
-          <Button type="submit" disabled={add.isPending}>
+        action={
+          <Button
+            onClick={() => {
+              setName('');
+              add.reset();
+              setAdding(true);
+            }}
+          >
             Add domain
           </Button>
-        </form>
-        <p className="mt-3 text-xs leading-relaxed text-ink-soft">
-          Registers the domain on this instance. Then onboard it to Email Sending in the{' '}
-          <a
-            className="font-medium text-accent hover:underline"
-            href="https://dash.cloudflare.com/?to=/:account/email-service/sending"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Cloudflare dashboard
-          </a>{' '}
-          and use Verify &amp; activate - the DNS check runs automatically.
-        </p>
-        <ErrorNote error={add.error ?? activate.error ?? archive.error ?? remove.error} />
-      </Card>
+        }
+      />
+      <ErrorNote error={activate.error ?? archive.error ?? remove.error} />
 
       {domains.data?.length ? (
         <Table head={['Domain', 'Status', 'Emails', 'Added', '']}>
@@ -286,6 +280,48 @@ function DomainsPage(): ReactElement {
         </Table>
       ) : (
         <Empty>{domains.isLoading ? 'Loading…' : 'No domains yet.'}</Empty>
+      )}
+
+      {adding && (
+        <Modal
+          title="Add a sending domain"
+          sub="Registers the domain on this instance."
+          onClose={() => setAdding(false)}
+        >
+          <form onSubmit={submit} className="mt-4 space-y-4">
+            <Field label="Domain">
+              <Input
+                autoFocus
+                placeholder="mail.example.com"
+                className="font-mono text-[13px]"
+                value={name}
+                onChange={e => setName(e.target.value)}
+              />
+            </Field>
+            <p className="text-xs leading-relaxed text-ink-soft">
+              Next, onboard it to Email Sending in the{' '}
+              <a
+                className="font-medium text-accent hover:underline"
+                href="https://dash.cloudflare.com/?to=/:account/email-service/sending"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Cloudflare dashboard
+              </a>{' '}
+              (Email Service &rarr; Onboard Domain), then use <b>Verify &amp; activate</b> from the
+              table - the DNS check runs automatically.
+            </p>
+            <ErrorNote error={add.error} />
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="ghost" type="button" onClick={() => setAdding(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={add.isPending || !name}>
+                Add domain
+              </Button>
+            </div>
+          </form>
+        </Modal>
       )}
 
       {deleting && (
