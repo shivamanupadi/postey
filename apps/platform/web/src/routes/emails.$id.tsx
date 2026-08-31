@@ -2,7 +2,7 @@ import { useState, type ReactElement } from 'react';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { api, fmtTime } from '@/lib/api';
-import { Badge, Card, Table } from '@/lib/ui';
+import { Badge, Card, Segmented, Table } from '@/lib/ui';
 
 export const Route = createFileRoute('/emails/$id')({
   component: EmailDetail,
@@ -50,15 +50,20 @@ function EmailDetail(): ReactElement {
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
-      <Link to="/emails" className="text-sm text-ink-soft hover:text-ink">
+      <Link
+        to="/emails"
+        className="inline-flex items-center gap-1 text-[13px] font-medium text-ink-soft transition hover:text-ink"
+      >
         ← Emails
       </Link>
       <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="font-display text-2xl font-semibold">{m.subject}</h1>
+        <div className="min-w-0">
+          <h1 className="text-[22px] font-semibold text-ink">{m.subject}</h1>
           <p className="mt-1 font-mono text-xs text-ink-soft">{m.id}</p>
         </div>
-        <Badge status={m.status} />
+        <div className="pt-1.5">
+          <Badge status={m.status} />
+        </div>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
@@ -86,7 +91,7 @@ function EmailDetail(): ReactElement {
               ))}
           </dl>
           {m.error_code && (
-            <p className="mt-3 rounded-xl border border-bad/30 bg-bad/5 px-3 py-2 font-mono text-xs text-bad">
+            <p className="mt-3 rounded-xl bg-bad-soft px-3 py-2 font-mono text-xs text-bad">
               {m.error_code}: {m.error_message}
             </p>
           )}
@@ -148,17 +153,7 @@ function EmailDetail(): ReactElement {
         <Card
           title="Body"
           action={
-            <div className="flex gap-1 rounded-full border border-line p-0.5 text-xs font-semibold">
-              {(['preview', 'html', 'text'] as const).map(v => (
-                <button
-                  key={v}
-                  onClick={() => setView(v)}
-                  className={`rounded-full px-3 py-1 ${view === v ? 'bg-ink text-cream' : 'text-ink-soft'}`}
-                >
-                  {v}
-                </button>
-              ))}
-            </div>
+            <Segmented options={['preview', 'html', 'text'] as const} value={view} onChange={setView} />
           }
         >
           {view === 'preview' && m.body.html ? (
@@ -166,10 +161,10 @@ function EmailDetail(): ReactElement {
               title="preview"
               sandbox=""
               srcDoc={m.body.html}
-              className="h-96 w-full rounded-xl border border-line bg-white"
+              className="h-96 w-full rounded-xl border border-line-soft bg-white"
             />
           ) : (
-            <pre className="max-h-96 overflow-auto rounded-xl border border-line bg-white p-4 font-mono text-xs">
+            <pre className="max-h-96 overflow-auto rounded-xl bg-ink-deep p-4 font-mono text-xs leading-relaxed text-cream/90">
               {view === 'text' ? (m.body.text ?? '(no text part)') : (m.body.html ?? '(no html part)')}
             </pre>
           )}

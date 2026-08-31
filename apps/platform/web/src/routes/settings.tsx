@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactElement, type FormEvent } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { Button, Card, ErrorNote, Field, Input } from '@/lib/ui';
+import { Button, Card, ErrorNote, Field, Input, PageHeader } from '@/lib/ui';
 
 export const Route = createFileRoute('/settings')({
   component: SettingsPage,
@@ -61,7 +61,7 @@ function SettingsPage(): ReactElement {
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
-      <h1 className="font-display text-2xl font-semibold">Settings</h1>
+      <PageHeader title="Settings" sub="Instance details and sending configuration." />
 
       <Card title="Instance">
         <dl className="space-y-2 text-sm">

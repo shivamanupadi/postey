@@ -2,7 +2,7 @@ import { useState, type ReactElement, type FormEvent } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, fmtTime } from '@/lib/api';
-import { Badge, Button, Card, Empty, ErrorNote, Input, Table } from '@/lib/ui';
+import { Badge, Button, Card, Empty, ErrorNote, Input, PageHeader, Table } from '@/lib/ui';
 
 export const Route = createFileRoute('/domains')({
   component: DomainsPage,
@@ -50,7 +50,10 @@ function DomainsPage(): ReactElement {
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
-      <h1 className="font-display text-2xl font-semibold">Domains</h1>
+      <PageHeader
+        title="Domains"
+        sub="Domains this instance may send from. Each needs Email Sending onboarding on Cloudflare's side."
+      />
       <Card title="Add a sending domain">
         <form onSubmit={submit} className="flex gap-3">
           <Input placeholder="mail.example.com" value={name} onChange={e => setName(e.target.value)} />

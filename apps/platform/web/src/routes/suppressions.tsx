@@ -2,7 +2,7 @@ import { useState, type ReactElement, type FormEvent } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, fmtTime } from '@/lib/api';
-import { Badge, Button, Card, Empty, ErrorNote, Input, Table } from '@/lib/ui';
+import { Badge, Button, Card, Empty, ErrorNote, Input, PageHeader, Table } from '@/lib/ui';
 
 export const Route = createFileRoute('/suppressions')({
   component: SuppressionsPage,
@@ -44,11 +44,10 @@ function SuppressionsPage(): ReactElement {
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
-      <h1 className="font-display text-2xl font-semibold">Suppressions</h1>
-      <p className="text-sm text-ink-soft">
-        Suppressed addresses are blocked at the API boundary and never billed. Hard bounces,
-        complaints, and unsubscribes land here automatically.
-      </p>
+      <PageHeader
+        title="Suppressions"
+        sub="Suppressed addresses are blocked at the API boundary and never billed. Hard bounces, complaints, and unsubscribes land here automatically."
+      />
       <Card>
         <div className="flex flex-wrap gap-3">
           <div className="min-w-64 flex-1">

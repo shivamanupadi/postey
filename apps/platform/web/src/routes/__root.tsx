@@ -61,7 +61,7 @@ function UpdatePill(): ReactElement | null {
       href={`https://postey.app/update?instance=${encodeURIComponent(instanceId)}`}
       target="_blank"
       rel="noreferrer"
-      className="mx-3 mb-2 block rounded-xl bg-accent/15 px-3 py-2 text-xs font-semibold text-accent transition hover:bg-accent/25"
+      className="mx-3 mb-2.5 block rounded-[10px] bg-accent/18 px-3 py-2 text-xs font-semibold text-[#ff8fa3] transition hover:bg-accent/28 hover:text-[#ffb3c0]"
     >
       Update available: v{latest.data} →
     </a>
@@ -80,7 +80,8 @@ function RootLayout(): ReactElement {
   if (path === '/login') return <Outlet />;
   if (me.isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-ink-soft">
+      <div className="flex min-h-screen items-center justify-center gap-2.5 text-sm text-ink-soft">
+        <span className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent motion-reduce:animate-none" />
         Loading…
       </div>
     );
@@ -89,25 +90,25 @@ function RootLayout(): ReactElement {
 
   return (
     <div className="flex min-h-screen">
-      <aside className="flex w-56 shrink-0 flex-col border-r border-white/10 bg-ink text-cream">
-        <div className="flex items-center gap-2.5 px-5 py-5">
-          <img src="/logo-dark.svg" alt="" className="h-7 w-7" />
-          <span className="font-display text-xl font-semibold">
+      <aside className="sticky top-0 flex h-screen w-[218px] shrink-0 flex-col bg-ink-deep text-cream">
+        <div className="flex items-center gap-2.5 px-5 pb-4 pt-5">
+          <img src="/logo-dark.svg" alt="" className="h-6 w-6" />
+          <span className="text-[16.5px] font-semibold tracking-tight">
             postey<span className="text-accent">.</span>
           </span>
         </div>
-        <nav className="flex-1 space-y-0.5 px-3">
+        <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pt-1">
           {NAV.map(item => {
             const active = item.to === '/' ? path === '/' : path.startsWith(item.to);
             return (
               <Link
                 key={item.to}
                 to={item.to}
-                className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition ${
-                  active ? 'bg-white/10 text-cream' : 'text-cream/60 hover:text-cream'
+                className={`flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-[13.5px] font-medium transition ${
+                  active ? 'bg-white/9 text-cream' : 'text-cream/60 hover:bg-white/5 hover:text-cream'
                 }`}
               >
-                <item.icon className="h-4 w-4" />
+                <item.icon className={`h-4 w-4 ${active ? 'text-accent' : ''}`} />
                 {item.label}
               </Link>
             );
@@ -117,7 +118,7 @@ function RootLayout(): ReactElement {
         <div className="border-t border-white/10 px-5 py-4">
           <p className="truncate text-xs text-cream/50">{me.data?.email}</p>
           <button
-            className="mt-2 flex items-center gap-1.5 text-xs font-medium text-cream/60 hover:text-cream"
+            className="mt-2 flex items-center gap-1.5 text-xs font-medium text-cream/60 transition hover:text-cream"
             onClick={async () => {
               await api.post('/api/auth/logout');
               queryClient.clear();
@@ -128,7 +129,7 @@ function RootLayout(): ReactElement {
           </button>
         </div>
       </aside>
-      <main className="min-w-0 flex-1 px-8 py-8">
+      <main className="min-w-0 flex-1 px-10 py-9">
         <Outlet />
       </main>
     </div>

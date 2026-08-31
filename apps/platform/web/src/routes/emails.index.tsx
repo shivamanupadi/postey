@@ -2,7 +2,7 @@ import { useState, type ReactElement } from 'react';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { api, fmtTime } from '@/lib/api';
-import { Badge, Empty, Input, Table } from '@/lib/ui';
+import { Badge, Empty, Input, PageHeader, Table } from '@/lib/ui';
 
 export const Route = createFileRoute('/emails/')({
   component: EmailsPage,
@@ -36,16 +36,28 @@ function EmailsPage(): ReactElement {
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
-      <div className="flex items-center justify-between gap-4">
-        <h1 className="font-display text-2xl font-semibold">Emails {status ? `· ${status}` : ''}</h1>
-        <div className="w-72">
-          <Input placeholder="Search subject, recipient, sender…" value={q} onChange={e => setQ(e.target.value)} />
-        </div>
-      </div>
+      <PageHeader
+        title={
+          <>
+            Emails
+            {status && <span className="ml-2 align-middle"><Badge status={status} /></span>}
+          </>
+        }
+        sub="Every send with its status and delivery timeline."
+        action={
+          <div className="w-72">
+            <Input
+              placeholder="Search subject, recipient, sender…"
+              value={q}
+              onChange={e => setQ(e.target.value)}
+            />
+          </div>
+        }
+      />
       {messages.data?.length ? (
         <Table head={['Subject', 'To', 'Status', 'Sent']}>
           {messages.data.map(m => (
-            <tr key={m.id} className="hover:bg-paper-deep/50">
+            <tr key={m.id} className="transition hover:bg-paper/60">
               <td className="px-4 py-3">
                 <Link to="/emails/$id" params={{ id: m.id }} className="font-medium hover:text-accent">
                   {m.subject}

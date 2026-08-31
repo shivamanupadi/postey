@@ -2,7 +2,7 @@ import type { ReactElement } from 'react';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { Badge, Card, Empty } from '@/lib/ui';
+import { Badge, Card, Empty, PageHeader } from '@/lib/ui';
 
 export const Route = createFileRoute('/')({
   component: Overview,
@@ -20,10 +20,12 @@ interface OverviewData {
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }): ReactElement {
   return (
-    <div className="rounded-2xl border border-line bg-white/60 p-5">
-      <p className="text-xs font-semibold uppercase tracking-wide text-ink-soft">{label}</p>
-      <p className="mt-2 font-display text-3xl font-semibold">{value}</p>
-      {hint && <p className="mt-1 text-xs text-ink-soft">{hint}</p>}
+    <div className="rounded-2xl border border-line-soft bg-white p-5 shadow-[0_1px_2px_rgba(30,25,18,0.04)]">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-soft">{label}</p>
+      <p className="mt-2 text-[28px] font-semibold leading-none tracking-tight tabular-nums">
+        {value}
+      </p>
+      {hint && <p className="mt-2 text-xs text-ink-soft">{hint}</p>}
     </div>
   );
 }
@@ -38,7 +40,7 @@ function Overview(): ReactElement {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <h1 className="font-display text-2xl font-semibold">Overview</h1>
+      <PageHeader title="Overview" sub="What this instance sent, and where it stands." />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
           label="Sent today"
@@ -54,7 +56,7 @@ function Overview(): ReactElement {
         <Stat label="Suppressions" value={String(d?.suppressions ?? '—')} />
       </div>
       {d?.quotaDailyLimit != null && d.sentToday >= d.quotaDailyLimit && (
-        <p className="rounded-xl border border-accent/40 bg-accent-soft px-4 py-3 text-sm text-accent-deep">
+        <p className="rounded-xl bg-warn-soft px-4 py-3 text-sm leading-relaxed text-warn">
           Today's discovered sending cap is reached - queued emails resume automatically after
           midnight UTC. Cloudflare raises the cap as your sender reputation grows; you can also
           request an increase from the Cloudflare dashboard.
@@ -68,10 +70,10 @@ function Overview(): ReactElement {
                 key={status}
                 to="/emails"
                 search={{ status }}
-                className="flex items-center gap-2 rounded-xl border border-line px-3.5 py-2 hover:border-accent/50"
+                className="flex items-center gap-2.5 rounded-xl border border-line-soft bg-white px-3.5 py-2 transition hover:border-accent/40 hover:shadow-[0_2px_8px_-2px_rgba(30,25,18,0.1)]"
               >
                 <Badge status={status} />
-                <span className="font-mono text-sm">{n}</span>
+                <span className="font-mono text-sm tabular-nums">{n}</span>
               </Link>
             ))}
           </div>

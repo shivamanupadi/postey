@@ -2,7 +2,7 @@ import { useState, type ReactElement, type FormEvent } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { Badge, Button, Card, Empty, ErrorNote, Field, Input, Table } from '@/lib/ui';
+import { Badge, Button, Card, Empty, ErrorNote, Field, Input, PageHeader, Table } from '@/lib/ui';
 
 export const Route = createFileRoute('/webhooks')({
   component: WebhooksPage,
@@ -57,7 +57,10 @@ function WebhooksPage(): ReactElement {
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
-      <h1 className="font-display text-2xl font-semibold">Webhooks</h1>
+      <PageHeader
+        title="Webhooks"
+        sub="Signed delivery events - delivered, bounced, complained, failed - pushed to your endpoints."
+      />
       <Card title="Add an endpoint">
         <form onSubmit={submit} className="space-y-4">
           <Field label="URL">
@@ -77,10 +80,10 @@ function WebhooksPage(): ReactElement {
                 onClick={() =>
                   setEvents(list => (list.includes(ev) ? list.filter(x => x !== ev) : [...list, ev]))
                 }
-                className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
                   events.includes(ev)
-                    ? 'border-accent bg-accent-soft text-accent-deep'
-                    : 'border-line text-ink-soft'
+                    ? 'border-accent/50 bg-accent-soft text-accent-deep'
+                    : 'border-line bg-white text-ink-soft hover:text-ink'
                 }`}
               >
                 {ev}

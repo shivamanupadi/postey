@@ -2,7 +2,7 @@ import { useState, type ReactElement, type FormEvent } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, fmtTime } from '@/lib/api';
-import { Button, Card, Empty, ErrorNote, Field, Input, Table } from '@/lib/ui';
+import { Button, Card, Empty, ErrorNote, Field, Input, PageHeader, Segmented, Select, Table } from '@/lib/ui';
 
 /* ── send snippets ──────────────────────────────────────────────── */
 
@@ -93,20 +93,14 @@ function SendSnippets({ apiKey }: { apiKey: string | null }): ReactElement {
   return (
     <div className="mt-4">
       <div className="flex items-center justify-between">
-        <div className="flex gap-1 rounded-full border border-line p-0.5 text-xs font-semibold">
-          {(['curl', 'node', 'python', 'mcp'] as const).map(l => (
-            <button
-              key={l}
-              onClick={() => setLang(l)}
-              className={`rounded-full px-3 py-1 ${lang === l ? 'bg-ink text-cream' : 'text-ink-soft'}`}
-            >
-              {l}
-            </button>
-          ))}
-        </div>
+        <Segmented options={['curl', 'node', 'python', 'mcp'] as const} value={lang} onChange={setLang} />
         <button
           onClick={copy}
-          className="rounded-full border border-line px-3 py-1 text-xs font-semibold text-ink-soft hover:border-ink-soft"
+          className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+            copied
+              ? 'bg-accent-soft text-accent-deep'
+              : 'border border-line text-ink-soft hover:bg-white hover:text-ink'
+          }`}
         >
           {copied ? 'Copied ✓' : 'Copy'}
         </button>
@@ -166,7 +160,10 @@ function KeysPage(): ReactElement {
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
-      <h1 className="font-display text-2xl font-semibold">API keys</h1>
+      <PageHeader
+        title="API keys"
+        sub="Keys are hashed at rest and shown once. Scope them to a domain wherever you can."
+      />
       <Card title="Create a key">
         <form onSubmit={submit} className="flex items-end gap-3">
           <div className="flex-1">
@@ -176,18 +173,14 @@ function KeysPage(): ReactElement {
           </div>
           <div className="w-64">
             <Field label="Scope">
-              <select
-                className="w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-sm"
-                value={domainId}
-                onChange={e => setDomainId(e.target.value)}
-              >
+              <Select value={domainId} onChange={e => setDomainId(e.target.value)}>
                 <option value="">All domains</option>
                 {domains.data?.map(d => (
                   <option key={d.id} value={d.id}>
                     {d.name} only
                   </option>
                 ))}
-              </select>
+              </Select>
             </Field>
           </div>
           <Button type="submit" disabled={create.isPending}>
@@ -199,7 +192,7 @@ function KeysPage(): ReactElement {
           templates, and suppressions. Prefer scoped keys for anything embedded in an app.
         </p>
         {minted && (
-          <div className="mt-4 rounded-xl border border-accent/40 bg-accent-soft px-4 py-3">
+          <div className="mt-4 rounded-xl bg-accent-soft px-4 py-3.5 ring-1 ring-accent/25">
             <p className="text-xs font-semibold text-accent-deep">
               Copy this key now - it is shown exactly once:
             </p>

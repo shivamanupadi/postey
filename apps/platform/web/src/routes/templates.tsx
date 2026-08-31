@@ -2,7 +2,7 @@ import { useState, type ReactElement, type FormEvent } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, fmtTime } from '@/lib/api';
-import { Button, Card, Empty, ErrorNote, Field, Input, Table, Textarea } from '@/lib/ui';
+import { Button, Card, Empty, ErrorNote, Field, Input, PageHeader, Select, Table, Textarea } from '@/lib/ui';
 
 export const Route = createFileRoute('/templates')({
   component: TemplatesPage,
@@ -68,17 +68,20 @@ function TemplatesPage(): ReactElement {
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
-      <div className="flex items-center justify-between">
-        <h1 className="font-display text-2xl font-semibold">Templates</h1>
-        <Button
-          onClick={() => {
-            setEditing('new');
-            setForm(empty);
-          }}
-        >
-          New template
-        </Button>
-      </div>
+      <PageHeader
+        title="Templates"
+        sub="Versioned templates with {{variables}}, validated at send time. Send by slug instead of shipping HTML."
+        action={
+          <Button
+            onClick={() => {
+              setEditing('new');
+              setForm(empty);
+            }}
+          >
+            New template
+          </Button>
+        }
+      />
 
       {editing && (
         <Card title={editing === 'new' ? 'New template' : 'Edit template'}>
@@ -95,18 +98,14 @@ function TemplatesPage(): ReactElement {
               <Input required placeholder="Welcome to {{product}}!" value={form.subject} onChange={set('subject')} />
             </Field>
             <Field label="Scope">
-              <select
-                className="w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-sm"
-                value={form.domain_id}
-                onChange={set('domain_id')}
-              >
+              <Select value={form.domain_id} onChange={set('domain_id')}>
                 <option value="">Shared (all domains)</option>
                 {domains.data?.map(d => (
                   <option key={d.id} value={d.id}>
                     {d.name} only
                   </option>
                 ))}
-              </select>
+              </Select>
             </Field>
             <Field label="HTML">
               <Textarea rows={8} value={form.html} onChange={set('html')} placeholder="<h1>Hi {{name}}</h1>" />

@@ -1,7 +1,7 @@
 import { useState, type ReactElement, type FormEvent } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { Button, ErrorNote, Field, Input } from '@/lib/ui';
+import { ErrorNote, Field, Input } from '@/lib/ui';
 
 export const Route = createFileRoute('/login')({
   component: LoginPage,
@@ -46,16 +46,30 @@ function LoginPage(): ReactElement {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-5">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 flex items-center justify-center gap-2.5">
+    <div className="flex min-h-screen items-center justify-center bg-paper px-5">
+      {/* dot grid, matching the deploy wizard */}
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-0"
+        style={{
+          backgroundImage: 'radial-gradient(circle, rgba(255,77,109,0.08) 1px, transparent 1px)',
+          backgroundSize: '26px 26px',
+          maskImage: 'linear-gradient(to bottom, black 0%, transparent 65%)',
+          WebkitMaskImage: 'linear-gradient(to bottom, black 0%, transparent 65%)',
+        }}
+      />
+      <div className="relative w-full max-w-sm">
+        <div className="mb-7 flex items-center justify-center gap-2.5">
           <img src="/logo.svg" alt="" className="h-9 w-9" />
-          <span className="font-display text-2xl font-semibold">
+          <span className="text-[22px] font-semibold tracking-tight">
             postey<span className="text-accent">.</span>
           </span>
         </div>
-        <form onSubmit={submit} className="space-y-4 rounded-2xl border border-line bg-white/60 p-6">
-          <h1 className="font-display text-xl font-semibold">
+        <form
+          onSubmit={submit}
+          className="space-y-4 rounded-[20px] border border-line-soft bg-white p-7 shadow-[0_12px_40px_-16px_rgba(30,25,18,0.18)]"
+        >
+          <h1 className="text-[17px] font-semibold">
             {claiming ? 'Claim this instance' : 'Sign in'}
           </h1>
           {claiming && (
@@ -81,9 +95,13 @@ function LoginPage(): ReactElement {
             />
           </Field>
           <ErrorNote error={error} />
-          <Button type="submit" disabled={busy}>
+          <button
+            type="submit"
+            disabled={busy}
+            className="w-full rounded-[10px] bg-accent px-4 py-2.5 text-sm font-medium text-white transition hover:bg-accent-deep disabled:cursor-not-allowed disabled:opacity-45"
+          >
             {busy ? 'Working…' : claiming ? 'Claim & sign in' : 'Sign in'}
-          </Button>
+          </button>
         </form>
       </div>
     </div>
