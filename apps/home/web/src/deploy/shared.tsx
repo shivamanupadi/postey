@@ -611,6 +611,142 @@ export function StepList({
   );
 }
 
+/* ── split shell: rail (identity + plan) | phase panel ──────────── */
+
+/** Two-panel wizard card: a persistent left rail and a phase panel. */
+export function SplitShell({
+  rail,
+  children,
+}: {
+  rail: ReactNode;
+  children: ReactNode;
+}): ReactElement {
+  return (
+    <div className="mx-auto grid w-full max-w-[900px] overflow-hidden rounded-[20px] border border-line-soft bg-white shadow-[0_12px_40px_-16px_rgba(30,25,18,0.18)] md:grid-cols-[330px_1fr]">
+      <aside className="border-b border-line-soft bg-paper px-6 py-6 md:border-b-0 md:border-r">
+        {rail}
+      </aside>
+      <div className="flex min-h-[440px] flex-col p-7">{children}</div>
+    </div>
+  );
+}
+
+type RailRow = { stepId: string; label: string; status: StepEvent['status'] | 'pending' };
+
+function railRows(steps: StepEvent[], plan: { stepId: string; label: string }[]): RailRow[] {
+  const byId = new Map(collapseSteps(steps).map(s => [s.stepId, s]));
+  const rows: RailRow[] = plan.map(p => {
+    const ev = byId.get(p.stepId);
+    return { stepId: p.stepId, label: p.label, status: ev?.status ?? 'pending' };
+  });
+  for (const ev of collapseSteps(steps)) {
+    if (!rows.some(r => r.stepId === ev.stepId)) {
+      rows.push({ stepId: ev.stepId, label: ev.label, status: ev.status });
+    }
+  }
+  return rows;
+}
+
+function RailStepIcon({ status }: { status: RailRow['status'] }): ReactElement {
+  if (status === 'ok')
+    return (
+      <span className="flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-full bg-emerald-100">
+        <Check className="h-2.5 w-2.5 text-emerald-700" strokeWidth={3} />
+      </span>
+    );
+  if (status === 'fail')
+    return <span className="h-[15px] w-[15px] shrink-0 rounded-full bg-red-100 ring-1 ring-red-300" />;
+  if (status === 'start' || status === 'retry')
+    return <Loader2 className="h-[15px] w-[15px] shrink-0 animate-spin text-accent" />;
+  return <span className="h-[15px] w-[15px] shrink-0 rounded-full border-[1.5px] border-line" />;
+}
+
+/** The rail body: identity block on top, the always-visible plan below.
+ *  Before the run every step shows pending; during it rows light up in
+ *  place with a progress bar; when finished the bar turns green. */
+export function WizardRail({
+  name,
+  sub,
+  meta,
+  planLabel,
+  plan,
+  steps,
+  running,
+  finished,
+  elapsed = 0,
+  danger = false,
+}: {
+  name: string;
+  sub?: string;
+  meta?: ReactNode;
+  planLabel: string;
+  plan: { stepId: string; label: string }[];
+  steps: StepEvent[];
+  running: boolean;
+  finished: boolean;
+  elapsed?: number;
+  danger?: boolean;
+}): ReactElement {
+  const rows = railRows(steps, plan);
+  const done = rows.filter(r => r.status === 'ok').length;
+  const started = running || finished;
+  return (
+    <div>
+      <div className="mb-4 border-b border-line-soft pb-4">
+        <p className="font-mono text-[13.5px] font-bold text-ink">{name}</p>
+        {sub && <p className="mt-0.5 font-mono text-[11px] text-ink-soft">{sub}</p>}
+        {meta && <div className="mt-2.5">{meta}</div>}
+      </div>
+      {started ? (
+        <div className="mb-3">
+          <p className="text-[11px] font-semibold text-ink-soft">
+            {done} of {rows.length} steps
+            {elapsed > 0 && <span className="font-normal"> · {elapsed}s</span>}
+          </p>
+          <div className="mt-1.5 h-[5px] overflow-hidden rounded-full bg-paper-deep">
+            <div
+              className={`h-full rounded-full transition-[width] duration-500 ${
+                finished ? 'bg-emerald-600' : danger ? 'bg-red-600' : 'bg-accent'
+              }`}
+              style={{ width: `${Math.round((done / Math.max(rows.length, 1)) * 100)}%` }}
+            />
+          </div>
+        </div>
+      ) : (
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-soft">
+          {planLabel} · {rows.length} steps
+        </p>
+      )}
+      <div>
+        {rows.map(r => (
+          <div
+            key={r.stepId}
+            className={`flex items-center gap-2.5 py-[3px] text-[12px] ${
+              r.status === 'pending'
+                ? 'text-ink-soft/55'
+                : r.status === 'ok'
+                  ? 'text-ink-soft'
+                  : r.status === 'fail'
+                    ? 'font-semibold text-red-700'
+                    : 'font-semibold text-ink'
+            }`}
+          >
+            <RailStepIcon status={r.status} />
+            <span className="min-w-0 truncate">{r.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** The label of the step currently running (or the last seen one). */
+export function currentStepLabel(steps: StepEvent[]): string {
+  const rows = collapseSteps(steps);
+  const live = [...rows].reverse().find(r => r.status === 'start' || r.status === 'retry');
+  return live?.label ?? (rows.length ? rows[rows.length - 1].label : 'Starting');
+}
+
 /* ── connect logic shared by every flow ─────────────────────────── */
 
 export interface Connect {

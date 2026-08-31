@@ -1,18 +1,20 @@
-import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowRight, Check, Loader2 } from 'lucide-react';
 import {
   BackButton,
   Card,
   CardTitle,
-  collapseSteps,
   ConnectSection,
   CopyField,
+  currentStepLabel,
   ErrorBox,
   PrimaryButton,
   PROVISION_PLAN,
   readSse,
+  SplitShell,
   useConnect,
+  WizardRail,
   WizardShell,
   wizardApi,
   type ResumeState,
@@ -36,19 +38,6 @@ const PHASE_INDEX: Record<Phase, number> = {
   done: 2,
 };
 
-/* ── split shell: rail (instance + plan) | phase panel ──────────── */
-
-function SplitShell({ rail, children }: { rail: ReactNode; children: ReactNode }): ReactElement {
-  return (
-    <div className="mx-auto grid w-full max-w-[900px] overflow-hidden rounded-[20px] border border-line-soft bg-white shadow-[0_12px_40px_-16px_rgba(30,25,18,0.18)] md:grid-cols-[330px_1fr]">
-      <aside className="border-b border-line-soft bg-paper px-6 py-6 md:border-b-0 md:border-r">
-        {rail}
-      </aside>
-      <div className="flex min-h-[440px] flex-col p-7">{children}</div>
-    </div>
-  );
-}
-
 function VersionArrow({ from, to }: { from: string | null; to: string | null }): ReactElement {
   return (
     <span className="inline-flex items-center gap-2 font-mono text-[12px]">
@@ -58,126 +47,6 @@ function VersionArrow({ from, to }: { from: string | null; to: string | null }):
         v{to ?? '?'}
       </span>
     </span>
-  );
-}
-
-type RailRow = { stepId: string; label: string; status: StepEvent['status'] | 'pending' };
-
-function railRows(steps: StepEvent[]): RailRow[] {
-  const byId = new Map(collapseSteps(steps).map(s => [s.stepId, s]));
-  const rows: RailRow[] = PROVISION_PLAN.map(p => {
-    const ev = byId.get(p.stepId);
-    return { stepId: p.stepId, label: p.label, status: ev?.status ?? 'pending' };
-  });
-  for (const ev of collapseSteps(steps)) {
-    if (!rows.some(r => r.stepId === ev.stepId)) {
-      rows.push({ stepId: ev.stepId, label: ev.label, status: ev.status });
-    }
-  }
-  return rows;
-}
-
-function RailStepIcon({ status }: { status: RailRow['status'] }): ReactElement {
-  if (status === 'ok')
-    return (
-      <span className="flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-full bg-emerald-100">
-        <Check className="h-2.5 w-2.5 text-emerald-700" strokeWidth={3} />
-      </span>
-    );
-  if (status === 'fail')
-    return <span className="h-[15px] w-[15px] shrink-0 rounded-full bg-red-100 ring-1 ring-red-300" />;
-  if (status === 'start' || status === 'retry')
-    return <Loader2 className="h-[15px] w-[15px] shrink-0 animate-spin text-accent" />;
-  return <span className="h-[15px] w-[15px] shrink-0 rounded-full border-[1.5px] border-line" />;
-}
-
-/** The rail: instance identity + the always-visible 14-step plan. */
-function Rail({
-  state,
-  latest,
-  upToDate,
-  steps,
-  running,
-  finished,
-  elapsed,
-  domain,
-}: {
-  state: ResumeState | null;
-  latest: string | null;
-  upToDate: boolean;
-  steps: StepEvent[];
-  running: boolean;
-  finished: boolean;
-  elapsed: number;
-  domain: string;
-}): ReactElement {
-  const rows = railRows(steps);
-  const done = rows.filter(r => r.status === 'ok').length;
-  const started = running || finished;
-  return (
-    <div>
-      <div className="mb-4 border-b border-line-soft pb-4">
-        <p className="font-mono text-[13.5px] font-bold text-ink">{state?.instanceName}</p>
-        <p className="mt-0.5 font-mono text-[11px] text-ink-soft">{domain}</p>
-        <div className="mt-2.5">
-          {upToDate && !started ? (
-            <span className="inline-flex items-center gap-1.5 font-mono text-[12px] text-ink">
-              v{state?.deployedVersion}
-              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
-                latest
-              </span>
-            </span>
-          ) : (
-            <VersionArrow
-              from={state?.deployedVersion ?? null}
-              to={latest}
-            />
-          )}
-        </div>
-        {!started && !upToDate && (
-          <p className="mt-1.5 text-[10px] leading-relaxed text-ink-soft">
-            current version as recorded at your last update
-          </p>
-        )}
-      </div>
-      {started ? (
-        <div className="mb-3">
-          <p className="text-[11px] font-semibold text-ink-soft">
-            {done} of {rows.length} steps
-            {elapsed > 0 && <span className="font-normal"> · {elapsed}s</span>}
-          </p>
-          <div className="mt-1.5 h-[5px] overflow-hidden rounded-full bg-paper-deep">
-            <div
-              className={`h-full rounded-full transition-[width] duration-500 ${finished ? 'bg-emerald-600' : 'bg-accent'}`}
-              style={{ width: `${Math.round((done / Math.max(rows.length, 1)) * 100)}%` }}
-            />
-          </div>
-        </div>
-      ) : (
-        <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-soft">
-          Update plan · {rows.length} steps
-        </p>
-      )}
-      <div>
-        {rows.map(r => (
-          <div
-            key={r.stepId}
-            className={`flex items-center gap-2.5 py-[3px] text-[12px] ${
-              r.status === 'pending'
-                ? 'text-ink-soft/55'
-                : r.status === 'ok'
-                  ? 'text-ink-soft'
-                  : r.status === 'fail'
-                    ? 'font-semibold text-red-700'
-                    : 'font-semibold text-ink'
-            }`}
-          >
-            <RailStepIcon status={r.status} />
-            <span className="min-w-0 truncate">{r.label}</span>
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -332,22 +201,38 @@ function UpdateWizard(): ReactElement {
     : '';
   const upToDate = Boolean(latest && state?.deployedVersion && latest === state.deployedVersion);
 
-  const currentStep = (() => {
-    const rows = collapseSteps(steps);
-    const live = [...rows].reverse().find(r => r.status === 'start' || r.status === 'retry');
-    return live?.label ?? (rows.length ? rows[rows.length - 1].label : 'Starting');
-  })();
+  const currentStep = currentStepLabel(steps);
 
+  const started = phase === 'updating' || phase === 'done';
   const rail = (
-    <Rail
-      state={state}
-      latest={latest}
-      upToDate={upToDate}
+    <WizardRail
+      name={state?.instanceName ?? ''}
+      sub={domain}
+      meta={
+        upToDate && !started ? (
+          <span className="inline-flex items-center gap-1.5 font-mono text-[12px] text-ink">
+            v{state?.deployedVersion}
+            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+              latest
+            </span>
+          </span>
+        ) : (
+          <>
+            <VersionArrow from={state?.deployedVersion ?? null} to={latest} />
+            {!started && (
+              <p className="mt-1.5 text-[10px] leading-relaxed text-ink-soft">
+                current version as recorded at your last update
+              </p>
+            )}
+          </>
+        )
+      }
+      planLabel="Update plan"
+      plan={PROVISION_PLAN}
       steps={steps}
       running={phase === 'updating'}
       finished={phase === 'done'}
       elapsed={elapsed}
-      domain={domain}
     />
   );
 

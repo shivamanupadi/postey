@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowRight, KeyRound, MailCheck, Server, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Check, KeyRound, Loader2, MailCheck, Server, ShieldCheck } from 'lucide-react';
 import {
   AccentBox,
   BackButton,
@@ -9,15 +9,17 @@ import {
   ConnectSection,
   CopyField,
   createSession,
+  currentStepLabel,
   ErrorBox,
   PrimaryButton,
   PROVISION_PLAN,
   readSse,
   runIsFresh,
   SelectField,
-  StepList,
+  SplitShell,
   TextField,
   useConnect,
+  WizardRail,
   WizardShell,
   wizardApi,
   type ResumeState,
@@ -55,6 +57,7 @@ function DeployWizard(): ReactElement {
   const [phase, setPhase] = useState<Phase>('intro');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [latest, setLatest] = useState<string | null>(null);
 
   const [instanceName, setInstanceName] = useState('postey');
   const [zones, setZones] = useState<{ id: string; name: string }[]>([]);
@@ -62,6 +65,7 @@ function DeployWizard(): ReactElement {
   const [subdomain, setSubdomain] = useState('mail');
 
   const [steps, setSteps] = useState<StepEvent[]>([]);
+  const [elapsed, setElapsed] = useState(0);
   const [result, setResult] = useState<{
     apiUrl: string;
     sendUrl: string;
@@ -69,6 +73,12 @@ function DeployWizard(): ReactElement {
   } | null>(null);
   const startedRef = useRef(false);
   const pollRef = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    void wizardApi<{ version?: string }>('/latest-version')
+      .then(d => setLatest(d.version ?? null))
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if (connect.oauthError) {
@@ -146,6 +156,15 @@ function DeployWizard(): ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
+  // Elapsed ticker while the run is live.
+  useEffect(() => {
+    if (phase !== 'deploying') return;
+    const startedAt = Date.now() - elapsed * 1000;
+    const t = window.setInterval(() => setElapsed(Math.round((Date.now() - startedAt) / 1000)), 1000);
+    return () => window.clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
   const begin = async (): Promise<void> => {
     if (sessionId) {
       setPhase('connect');
@@ -196,6 +215,7 @@ function DeployWizard(): ReactElement {
     setBusy(true);
     setError('');
     setSteps([]);
+    setElapsed(0);
     setPhase('deploying');
     try {
       const res = await fetch(`/api/deploy/instance/${sessionId}/provision`, {
@@ -240,6 +260,27 @@ function DeployWizard(): ReactElement {
 
   const onboardWaiting = steps.filter(s => s.stepId === 'onboard').at(-1)?.status === 'retry';
   const resumeUrl = sessionId ? `${window.location.origin}/deploy?instance=${sessionId}` : '';
+
+  const rail = (
+    <WizardRail
+      name={instanceName.trim() || 'postey'}
+      sub={zoneId ? sendingHost : undefined}
+      meta={
+        <span className="inline-flex items-center gap-1.5 font-mono text-[12px] text-ink-soft">
+          installs
+          <span className="rounded-md bg-accent-soft px-2 py-0.5 font-semibold text-accent-deep">
+            {latest ? `v${latest}` : 'latest release'}
+          </span>
+        </span>
+      }
+      planLabel="Deploy plan"
+      plan={PROVISION_PLAN}
+      steps={steps}
+      running={phase === 'deploying'}
+      finished={phase === 'done'}
+      elapsed={elapsed}
+    />
+  );
 
   return (
     <WizardShell
@@ -306,49 +347,39 @@ function DeployWizard(): ReactElement {
       )}
 
       {phase === 'connect' && (
-        <Card
-          footer={
-            <>
-              <BackButton onClick={() => setPhase('intro')} />
-              <PrimaryButton
-                onClick={() => {
-                  setError('');
-                  setPhase('setup');
-                }}
-                disabled={connect.tokenStatus !== 'ok'}
-              >
-                Continue
-                <ArrowRight className="h-4 w-4" />
-              </PrimaryButton>
-            </>
-          }
-        >
-          <CardTitle
-            title="Connect your Cloudflare account"
-            sub="Verified live - the wizard checks access before touching anything."
-          />
-          {error && <ErrorBox>{error}</ErrorBox>}
-          <ConnectSection connect={connect} />
-        </Card>
+        <SplitShell rail={rail}>
+          <div className="my-auto">
+            <h2 className="text-[17px] font-semibold tracking-tight text-ink">
+              Connect your Cloudflare account
+            </h2>
+            <p className="mb-5 mt-1 text-[13px] leading-relaxed text-ink-soft">
+              Verified live - the wizard checks access before touching anything.
+            </p>
+            {error && <ErrorBox>{error}</ErrorBox>}
+            <ConnectSection connect={connect} />
+          </div>
+          <div className="mt-auto flex items-center justify-end gap-3 pt-6">
+            <BackButton onClick={() => setPhase('intro')} />
+            <PrimaryButton
+              onClick={() => {
+                setError('');
+                setPhase('setup');
+              }}
+              disabled={connect.tokenStatus !== 'ok'}
+            >
+              Continue
+              <ArrowRight className="h-4 w-4" />
+            </PrimaryButton>
+          </div>
+        </SplitShell>
       )}
 
       {phase === 'setup' && (
-        <Card
-          footer={
-            <>
-              <BackButton onClick={() => setPhase('connect')} />
-              <PrimaryButton
-                onClick={() => void deploy()}
-                busy={busy}
-                disabled={!zoneId || !nameOk || !subOk}
-              >
-                Deploy to Cloudflare
-                <ArrowRight className="h-4 w-4" />
-              </PrimaryButton>
-            </>
-          }
-        >
-          <CardTitle title="Set up the instance" sub="Two choices - everything else is automatic." />
+        <SplitShell rail={rail}>
+          <h2 className="text-[17px] font-semibold tracking-tight text-ink">Set up the instance</h2>
+          <p className="mb-5 mt-1 text-[13px] leading-relaxed text-ink-soft">
+            Two choices - everything else is automatic.
+          </p>
           {error && <ErrorBox>{error}</ErrorBox>}
           {existing.length > 0 && (
             <AccentBox>
@@ -403,37 +434,33 @@ function DeployWizard(): ReactElement {
               dashboard and API deploy to workers.dev URLs - nothing else on this domain changes.
             </div>
           </div>
-        </Card>
+          <div className="mt-auto flex items-center justify-end gap-3 pt-6">
+            <BackButton onClick={() => setPhase('connect')} />
+            <PrimaryButton
+              onClick={() => void deploy()}
+              busy={busy}
+              disabled={!zoneId || !nameOk || !subOk}
+            >
+              Deploy to Cloudflare
+              <ArrowRight className="h-4 w-4" />
+            </PrimaryButton>
+          </div>
+        </SplitShell>
       )}
 
       {(phase === 'deploying' || phase === 'failed') && (
-        <div className="space-y-4">
-          {onboardWaiting && phase === 'deploying' && (
-            <div className="mx-auto w-full max-w-[560px] rounded-[20px] border border-accent/30 bg-accent-soft p-5">
-              <p className="flex items-center gap-2 text-[13.5px] font-semibold text-accent-deep">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-accent motion-reduce:animate-none" />
-                Your turn: one manual step (two clicks)
-              </p>
-              <p className="mt-2 text-[12.5px] leading-relaxed text-accent-deep/80">
-                Open the dashboard, select <strong>Onboard Domain</strong>, pick{' '}
-                <strong>{sendingHost}</strong>, and select <strong>Done</strong>. DNS records are
-                created automatically and detection here is automatic too - just come back to this
-                tab.
-              </p>
-              <a
-                href="https://dash.cloudflare.com/?to=/:account/email-service/sending"
-                target="_blank"
-                rel="noreferrer"
-                className="mt-3.5 inline-block rounded-full bg-accent px-5 py-2.5 text-[13px] font-semibold text-white transition hover:bg-accent-deep"
-              >
-                Open Email Sending in the dashboard →
-              </a>
-            </div>
-          )}
-          <Card
-            footer={
-              phase === 'failed' ? (
-                <>
+        <SplitShell rail={rail}>
+          <div className="my-auto">
+            {phase === 'failed' ? (
+              <>
+                <h2 className="mb-3 text-[17px] font-semibold tracking-tight text-ink">
+                  Deploy failed
+                </h2>
+                {error && <ErrorBox>{error}</ErrorBox>}
+                <p className="mb-5 text-[12.5px] leading-relaxed text-ink-soft">
+                  Everything already created is reused on retry.
+                </p>
+                <div className="flex items-center gap-3">
                   <BackButton onClick={() => setPhase('setup')} label="Change settings" />
                   <PrimaryButton
                     onClick={() => void deploy()}
@@ -442,61 +469,98 @@ function DeployWizard(): ReactElement {
                   >
                     Retry - resumes where it failed
                   </PrimaryButton>
-                </>
-              ) : undefined
-            }
-          >
-            <CardTitle
-              title={phase === 'failed' ? 'Deploy failed' : 'Deploying…'}
-              sub={
-                phase === 'failed'
-                  ? 'Everything already created is reused on retry.'
-                  : 'Provisioning into your account. Keep this tab open - or come back later with this page’s URL.'
-              }
-            />
-            {phase === 'failed' && error && <ErrorBox>{error}</ErrorBox>}
-            <StepList steps={steps} plan={PROVISION_PLAN} />
-          </Card>
-        </div>
+                </div>
+              </>
+            ) : onboardWaiting ? (
+              <>
+                <p className="flex items-center gap-2 text-[14px] font-semibold text-accent-deep">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-accent motion-reduce:animate-none" />
+                  Your turn: one manual step (two clicks)
+                </p>
+                <p className="mt-2.5 text-[12.5px] leading-relaxed text-ink-soft">
+                  Open the dashboard, select <strong className="text-ink">Onboard Domain</strong>,
+                  pick <strong className="text-ink">{sendingHost}</strong>, and select{' '}
+                  <strong className="text-ink">Done</strong>. DNS records are created automatically
+                  and detection here is automatic too - just come back to this tab.
+                </p>
+                <a
+                  href="https://dash.cloudflare.com/?to=/:account/email-service/sending"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-4 inline-block rounded-full bg-accent px-5 py-2.5 text-[13px] font-semibold text-white transition hover:bg-accent-deep"
+                >
+                  Open Email Sending in the dashboard →
+                </a>
+                <p className="mt-4 text-[11.5px] text-ink-soft">
+                  {elapsed}s elapsed · waiting for the onboarding to appear.
+                </p>
+              </>
+            ) : (
+              <>
+                <Loader2 className="h-9 w-9 animate-spin text-accent" />
+                <h2 className="mt-4 text-[17px] font-semibold tracking-tight text-ink">
+                  {currentStepLabel(steps)}…
+                </h2>
+                <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-soft">
+                  {elapsed}s elapsed · provisioning into your account.
+                </p>
+                <p className="mt-4 text-[11.5px] text-ink-soft">
+                  Keep this tab open - or come back later with this page's URL.
+                </p>
+              </>
+            )}
+          </div>
+        </SplitShell>
       )}
 
       {phase === 'done' && result && (
         <div className="space-y-4">
-          <Card>
-            <CardTitle
-              title="Your instance is live 🎉"
-              sub="Everything below is running in your Cloudflare account."
-            />
-            <div className="space-y-5">
-              <CopyField
-                label="Dashboard"
-                value={result.apiUrl}
-                href={
-                  result.claimCode
-                    ? `${result.apiUrl}/login#claim=${result.claimCode}`
-                    : result.apiUrl
-                }
-                hint={
-                  result.claimCode
-                    ? 'This link carries your one-time claim code - open it now to create the operator account. The code is not stored anywhere else.'
-                    : undefined
-                }
-              />
-              <CopyField
-                label="Send API endpoint"
-                value={`${result.sendUrl}/api/emails`}
-                hint="Create an API key in the dashboard, then POST Resend-shaped payloads here."
-              />
-              {resumeUrl && (
+          <SplitShell rail={rail}>
+            <div className="my-auto">
+              <div className="flex items-center gap-3.5">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-100">
+                  <Check className="h-5 w-5 text-emerald-700" strokeWidth={2.6} />
+                </span>
+                <div>
+                  <h2 className="text-[17.5px] font-semibold tracking-tight text-ink">
+                    Your instance is live 🎉
+                  </h2>
+                  <p className="mt-0.5 text-[12px] text-ink-soft">
+                    Everything below is running in your Cloudflare account.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-5 space-y-4">
                 <CopyField
-                  label="Instance link - bookmark this"
-                  value={resumeUrl}
-                  hint="The handle for updating and destroying this instance later. It is not stored anywhere else."
+                  label="Dashboard"
+                  value={result.apiUrl}
+                  href={
+                    result.claimCode
+                      ? `${result.apiUrl}/login#claim=${result.claimCode}`
+                      : result.apiUrl
+                  }
+                  hint={
+                    result.claimCode
+                      ? 'This link carries your one-time claim code - open it now to create the operator account. The code is not stored anywhere else.'
+                      : undefined
+                  }
                 />
-              )}
+                <CopyField
+                  label="Send API endpoint"
+                  value={`${result.sendUrl}/api/emails`}
+                  hint="Create an API key in the dashboard, then POST Resend-shaped payloads here."
+                />
+                {resumeUrl && (
+                  <CopyField
+                    label="Instance link - bookmark this"
+                    value={resumeUrl}
+                    hint="The handle for updating and destroying this instance later. It is not stored anywhere else."
+                  />
+                )}
+              </div>
             </div>
-          </Card>
-          <Card>
+          </SplitShell>
+          <div className="mx-auto w-full max-w-[900px] rounded-[20px] border border-line-soft bg-white p-7 shadow-[0_12px_40px_-16px_rgba(30,25,18,0.18)]">
             <CardTitle title="Next steps" />
             <ol className="list-decimal space-y-2 pl-5 text-[13px] leading-relaxed text-ink-soft">
               <li>
@@ -520,7 +584,7 @@ function DeployWizard(): ReactElement {
                 .
               </li>
             </ol>
-          </Card>
+          </div>
         </div>
       )}
     </WizardShell>

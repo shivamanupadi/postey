@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { Check, Loader2 } from 'lucide-react';
 import {
   BackButton,
   Card,
   CardTitle,
   ConnectSection,
+  currentStepLabel,
   DangerButton,
   DESTROY_PLAN,
   ErrorBox,
   readSse,
-  StepList,
+  SplitShell,
   useConnect,
+  WizardRail,
   WizardShell,
   wizardApi,
   type ResumeState,
@@ -48,6 +51,7 @@ function DestroyWizard(): ReactElement {
   const [state, setState] = useState<ResumeState | null>(null);
   const [confirmName, setConfirmName] = useState('');
   const [steps, setSteps] = useState<StepEvent[]>([]);
+  const [elapsed, setElapsed] = useState(0);
   const [retained, setRetained] = useState<{ bucket: string; reason: string } | null>(null);
   const startedRef = useRef(false);
 
@@ -86,11 +90,21 @@ function DestroyWizard(): ReactElement {
     })();
   }, [sessionId]);
 
+  // Elapsed ticker while the teardown is live.
+  useEffect(() => {
+    if (phase !== 'destroying') return;
+    const startedAt = Date.now() - elapsed * 1000;
+    const t = window.setInterval(() => setElapsed(Math.round((Date.now() - startedAt) / 1000)), 1000);
+    return () => window.clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
   const runDestroy = async (): Promise<void> => {
     if (!state?.instanceName) return;
     setBusy(true);
     setError('');
     setSteps([]);
+    setElapsed(0);
     setPhase('destroying');
     try {
       const res = await fetch(`/api/deploy/instance/${sessionId}/destroy`, {
@@ -127,6 +141,37 @@ function DestroyWizard(): ReactElement {
   };
 
   const name = state?.instanceName ?? '';
+  const domain = state?.sendingDomain
+    ? state.sendingDomain.subdomain
+      ? `${state.sendingDomain.subdomain}.${state.sendingDomain.zoneName}`
+      : state.sendingDomain.zoneName
+    : undefined;
+
+  const rail = (
+    <WizardRail
+      name={name}
+      sub={domain}
+      meta={
+        <span className="inline-flex items-center gap-1.5 font-mono text-[12px]">
+          {state?.deployedVersion && (
+            <span className="rounded-md bg-paper-deep px-2 py-0.5 text-ink-soft">
+              v{state.deployedVersion}
+            </span>
+          )}
+          <span className="rounded-full bg-red-100 px-2 py-0.5 font-sans text-[10px] font-semibold text-red-700">
+            no undo
+          </span>
+        </span>
+      }
+      planLabel="Teardown plan"
+      plan={DESTROY_PLAN}
+      steps={steps}
+      running={phase === 'destroying'}
+      finished={phase === 'done'}
+      elapsed={elapsed}
+      danger
+    />
+  );
 
   return (
     <WizardShell
@@ -157,35 +202,29 @@ function DestroyWizard(): ReactElement {
       )}
 
       {phase === 'connect' && (
-        <Card>
-          <CardTitle
-            title={`Destroy “${name}”`}
-            sub="Connect the account that owns this instance. You'll confirm on the next screen before anything is touched."
-          />
-          {error && <ErrorBox>{error}</ErrorBox>}
-          <ConnectSection connect={connect} />
-        </Card>
+        <SplitShell rail={rail}>
+          <div className="my-auto">
+            <h2 className="text-[17px] font-semibold tracking-tight text-ink">
+              Destroy &ldquo;{name}&rdquo;
+            </h2>
+            <p className="mb-5 mt-1 text-[13px] leading-relaxed text-ink-soft">
+              Connect the account that owns this instance. You'll confirm on the next screen
+              before anything is touched.
+            </p>
+            {error && <ErrorBox>{error}</ErrorBox>}
+            <ConnectSection connect={connect} />
+          </div>
+        </SplitShell>
       )}
 
       {phase === 'confirm' && (
-        <Card
-          footer={
-            <>
-              <BackButton onClick={() => setPhase('connect')} />
-              <DangerButton
-                onClick={() => void runDestroy()}
-                busy={busy}
-                disabled={!connect.accountId || confirmName !== name}
-              >
-                Destroy forever
-              </DangerButton>
-            </>
-          }
-        >
-          <CardTitle
-            title="This deletes your email history"
-            sub="Read what goes before typing the name."
-          />
+        <SplitShell rail={rail}>
+          <h2 className="text-[17px] font-semibold tracking-tight text-ink">
+            This deletes your email history
+          </h2>
+          <p className="mb-4 mt-1 text-[13px] leading-relaxed text-ink-soft">
+            Read what goes before typing the name.
+          </p>
           {error && <ErrorBox>{error}</ErrorBox>}
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-2xl bg-red-50 p-4 ring-1 ring-red-100">
@@ -224,54 +263,84 @@ function DestroyWizard(): ReactElement {
               className={inputClass}
             />
           </div>
-        </Card>
+          <div className="mt-auto flex items-center justify-end gap-3 pt-6">
+            <BackButton onClick={() => setPhase('connect')} />
+            <DangerButton
+              onClick={() => void runDestroy()}
+              busy={busy}
+              disabled={!connect.accountId || confirmName !== name}
+            >
+              Destroy forever
+            </DangerButton>
+          </div>
+        </SplitShell>
       )}
 
       {(phase === 'destroying' || phase === 'done') && (
-        <Card
-          footer={
-            phase === 'destroying' && error ? (
-              <DangerButton onClick={() => void runDestroy()} busy={busy}>
-                Retry teardown
-              </DangerButton>
-            ) : phase === 'done' ? (
-              <BackButton onClick={() => void navigate({ to: '/' })} label="Back to postey.app" />
-            ) : undefined
-          }
-        >
-          <CardTitle
-            title={phase === 'done' ? 'Instance destroyed' : 'Tearing down…'}
-            sub={
-              phase === 'done'
-                ? 'Your domain, DNS, and the rest of your Cloudflare account are untouched.'
-                : undefined
-            }
-          />
-          {phase === 'destroying' && error && <ErrorBox>{error}</ErrorBox>}
-          {(phase === 'destroying' || steps.length > 0) && (
-            <StepList steps={steps} plan={DESTROY_PLAN} />
-          )}
-          {phase === 'done' && retained && (
-            <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-[12.5px] leading-relaxed text-amber-900 ring-1 ring-amber-200">
-              One thing needs your attention: the bucket{' '}
-              <code className="font-mono font-medium">{retained.bucket}</code> was kept -{' '}
-              {retained.reason} It keeps costing R2 storage until you remove it in the Cloudflare
-              dashboard (R2 → {retained.bucket} → Settings → Delete).
-            </p>
-          )}
-          {phase === 'done' && (
-            <p className="mt-4 text-[13px] text-ink-soft">
-              Changed your mind?{' '}
-              <a
-                href="/deploy"
-                className="font-semibold text-accent underline decoration-accent/40 underline-offset-2"
-              >
-                Deploy a fresh instance
-              </a>{' '}
-              any time.
-            </p>
-          )}
-        </Card>
+        <SplitShell rail={rail}>
+          <div className="my-auto">
+            {phase === 'destroying' ? (
+              error ? (
+                <>
+                  <ErrorBox>{error}</ErrorBox>
+                  <DangerButton onClick={() => void runDestroy()} busy={busy}>
+                    Retry teardown
+                  </DangerButton>
+                </>
+              ) : (
+                <>
+                  <Loader2 className="h-9 w-9 animate-spin text-red-600" />
+                  <h2 className="mt-4 text-[17px] font-semibold tracking-tight text-ink">
+                    {currentStepLabel(steps)}…
+                  </h2>
+                  <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-soft">
+                    {elapsed}s elapsed · keep this tab open until it finishes.
+                  </p>
+                </>
+              )
+            ) : (
+              <>
+                <div className="flex items-center gap-3.5">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-100">
+                    <Check className="h-5 w-5 text-emerald-700" strokeWidth={2.6} />
+                  </span>
+                  <div>
+                    <h2 className="text-[17.5px] font-semibold tracking-tight text-ink">
+                      Instance destroyed
+                    </h2>
+                    <p className="mt-0.5 text-[12px] text-ink-soft">
+                      Your domain, DNS, and the rest of your Cloudflare account are untouched.
+                    </p>
+                  </div>
+                </div>
+                {retained && (
+                  <p className="mt-5 rounded-xl bg-amber-50 px-4 py-3 text-[12.5px] leading-relaxed text-amber-900 ring-1 ring-amber-200">
+                    One thing needs your attention: the bucket{' '}
+                    <code className="font-mono font-medium">{retained.bucket}</code> was kept -{' '}
+                    {retained.reason} It keeps costing R2 storage until you remove it in the
+                    Cloudflare dashboard (R2 → {retained.bucket} → Settings → Delete).
+                  </p>
+                )}
+                <p className="mt-5 text-[13px] text-ink-soft">
+                  Changed your mind?{' '}
+                  <a
+                    href="/deploy"
+                    className="font-semibold text-accent underline decoration-accent/40 underline-offset-2"
+                  >
+                    Deploy a fresh instance
+                  </a>{' '}
+                  any time.
+                </p>
+                <div className="mt-6">
+                  <BackButton
+                    onClick={() => void navigate({ to: '/' })}
+                    label="Back to postey.app"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        </SplitShell>
       )}
     </WizardShell>
   );
