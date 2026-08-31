@@ -395,4 +395,61 @@ app.get('/webhooks/:id/deliveries', async c => {
   return c.json({ data: rows.results });
 });
 
+/* ── template test sends ─────────────────────────────────────────── */
+
+/** Sends the (already variable-filled) template content straight through the
+ *  Email Service binding. Deliberately outside the message log - it's a
+ *  preview in your inbox, not traffic. */
+app.post(
+  '/test-send',
+  zValidator(
+    'json',
+    z.object({
+      to: z.string().email(),
+      subject: z.string().min(1).max(998),
+      html: z.string().max(500_000).nullable(),
+      text: z.string().max(500_000).nullable(),
+      domain_id: z.string().optional(),
+    })
+  ),
+  async c => {
+    if (!c.env.EMAIL) {
+      return c.json(
+        { error: 'This instance predates test sends - run an update from postey.app to enable them.' },
+        501
+      );
+    }
+    const body = c.req.valid('json');
+    if (!body.html && !body.text) {
+      return c.json({ error: 'The template has no HTML or text body yet' }, 422);
+    }
+    const domain = body.domain_id
+      ? await c.env.DB.prepare("SELECT name, status, default_from FROM domains WHERE id = ?")
+          .bind(body.domain_id)
+          .first<{ name: string; status: string; default_from: string | null }>()
+      : await c.env.DB.prepare("SELECT name, status, default_from FROM domains WHERE status = 'active' LIMIT 1")
+          .first<{ name: string; status: string; default_from: string | null }>();
+    if (!domain) return c.json({ error: 'No sending domain found - add one on the Domains page' }, 409);
+    if (domain.status !== 'active') {
+      return c.json({ error: `${domain.name} is not active - verify & activate it first` }, 409);
+    }
+    try {
+      await c.env.EMAIL.send({
+        to: [body.to],
+        from: domain.default_from ?? `test@${domain.name}`,
+        subject: `[Test] ${body.subject}`,
+        ...(body.html ? { html: body.html } : {}),
+        ...(body.text ? { text: body.text } : {}),
+      });
+      return c.json({ data: { ok: true } });
+    } catch (raw) {
+      const err = raw as Error & { code?: string };
+      return c.json(
+        { error: `${err.code ?? 'E_UNKNOWN'}: ${err.message ?? 'send failed'}` },
+        502
+      );
+    }
+  }
+);
+
 export const resourcesRoute = app;

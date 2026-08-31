@@ -607,6 +607,7 @@ export async function provisionInstance(ctx: EngineCtx): Promise<ProvisionResult
         { type: 'd1', name: 'DB', id: d1Id },
         { type: 'r2_bucket', name: 'BODIES', bucket_name: N.bucket },
         { type: 'assets', name: 'ASSETS' },
+        { type: 'send_email', name: 'EMAIL' },
         { type: 'plain_text', name: 'ENVIRONMENT', text: 'production' },
         { type: 'plain_text', name: 'SEND_URL', text: sendUrl },
         { type: 'plain_text', name: 'SENDING_DOMAIN', text: ctx.sendingDomain.hostname },

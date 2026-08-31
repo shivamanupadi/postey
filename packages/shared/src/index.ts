@@ -165,6 +165,31 @@ export interface WebhookEvent {
   };
 }
 
+/** Structural type for the Email Service send_email binding - kept minimal so
+ *  release bundles do not depend on generated worker-configuration types.
+ *  Attached to the send worker (delivery) and the api worker (test sends). */
+export interface EmailBinding {
+  send(message: {
+    to: string | string[];
+    cc?: string[];
+    bcc?: string[];
+    from: { email: string; name?: string } | string;
+    replyTo?: string;
+    subject: string;
+    html?: string;
+    text?: string;
+    headers?: Record<string, string>;
+    attachments?: {
+      /** Strings are RAW content (not base64); binary goes as ArrayBuffer. */
+      content: string | ArrayBuffer;
+      filename: string;
+      type?: string;
+      disposition?: string;
+      contentId?: string;
+    }[];
+  }): Promise<{ messageId?: string }>;
+}
+
 export async function signWebhook(secret: string, body: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     'raw',

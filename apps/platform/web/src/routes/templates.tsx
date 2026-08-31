@@ -9,6 +9,9 @@ import {
   Dropdown,
   Empty,
   ErrorNote,
+  Field,
+  Input,
+  Modal,
   PageHeader,
   Segmented,
   Table,
@@ -56,21 +59,130 @@ const fillVars = (s: string): string =>
   s.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, v: string) => SAMPLE[v] ?? `[${v}]`);
 
 /**
- * Chrome does not reliably re-navigate an iframe when React rewrites its
- * srcDoc attribute mid-typing, so drive srcdoc imperatively (debounced).
+ * Double-buffered preview: rewriting one iframe's srcdoc reloads its document
+ * and flashes white on every keystroke. Instead, write the new content into
+ * the hidden back-buffer iframe and swap the two only once it has loaded -
+ * the visible document is never mid-reload.
  */
 function PreviewFrame({ html }: { html: string }): ReactElement {
-  const ref = useRef<HTMLIFrameElement>(null);
+  const frameA = useRef<HTMLIFrameElement>(null);
+  const frameB = useRef<HTMLIFrameElement>(null);
+  const frontRef = useRef<0 | 1>(0);
+  const [front, setFront] = useState<0 | 1>(0);
   useEffect(() => {
     const t = setTimeout(() => {
-      const el = ref.current;
+      const back = frontRef.current === 0 ? 1 : 0;
+      const el = (back === 0 ? frameA : frameB).current;
       if (!el) return;
-      el.removeAttribute('srcdoc');
+      const onLoad = (): void => {
+        el.removeEventListener('load', onLoad);
+        frontRef.current = back;
+        setFront(back);
+      };
+      el.addEventListener('load', onLoad);
       el.setAttribute('srcdoc', html);
     }, 250);
     return () => clearTimeout(t);
   }, [html]);
-  return <iframe ref={ref} title="preview" sandbox="" className="min-h-0 flex-1 bg-white" />;
+  const frameClass = (visible: boolean): string =>
+    `absolute inset-0 h-full w-full bg-white ${visible ? '' : 'invisible'}`;
+  return (
+    <div className="relative min-h-0 flex-1 bg-white">
+      <iframe ref={frameA} title="preview" sandbox="" className={frameClass(front === 0)} />
+      <iframe ref={frameB} title="preview buffer" sandbox="" className={frameClass(front === 1)} />
+    </div>
+  );
+}
+
+/** Sends the sample-filled preview to a real inbox through the dashboard's
+ *  test-send endpoint. Outside the email log by design. */
+function TestSendModal({
+  subject,
+  html,
+  text,
+  domains,
+  defaultDomainId,
+  onClose,
+}: {
+  subject: string;
+  html: string | null;
+  text: string | null;
+  domains: { id: string; name: string }[];
+  defaultDomainId: string;
+  onClose: () => void;
+}): ReactElement {
+  const me = useQuery({
+    queryKey: ['me'],
+    queryFn: () => api.get<{ email: string }>('/api/me'),
+    staleTime: Infinity,
+  });
+  const [to, setTo] = useState('');
+  const [domainId, setDomainId] = useState(
+    domains.some(d => d.id === defaultDomainId) ? defaultDomainId : (domains[0]?.id ?? '')
+  );
+  useEffect(() => {
+    if (me.data?.email) setTo(prev => prev || me.data.email);
+  }, [me.data]);
+
+  const send = useMutation({
+    mutationFn: () =>
+      api.post('/api/test-send', { to, subject, html, text, domain_id: domainId }),
+  });
+
+  return (
+    <Modal
+      title="Send a test email"
+      sub="Sends the preview - sample values filled in - to a real inbox."
+      onClose={onClose}
+    >
+      <div className="mt-4 space-y-4">
+        <Field label="To">
+          <Input
+            type="email"
+            placeholder="you@example.com"
+            value={to}
+            onChange={e => setTo(e.target.value)}
+          />
+        </Field>
+        <Field label="From domain">
+          {domains.length ? (
+            <Dropdown
+              full
+              value={domainId}
+              onChange={setDomainId}
+              options={domains.map(d => ({ value: d.id, label: d.name }))}
+            />
+          ) : (
+            <p className="rounded-[10px] bg-warn-soft px-3.5 py-2.5 text-xs leading-relaxed text-warn">
+              No active domain - verify &amp; activate one on the Domains page first.
+            </p>
+          )}
+        </Field>
+        <p className="text-xs leading-relaxed text-ink-soft">
+          Arrives with a <b>[Test]</b> subject prefix. Test sends skip the email log and
+          webhooks; sends to your account's verified destination addresses don't count against
+          the daily quota.
+        </p>
+        <ErrorNote error={send.error} />
+        {send.isSuccess && (
+          <p className="rounded-[10px] bg-ok-soft px-3.5 py-2.5 text-xs font-semibold text-ok">
+            Sent - check {to}.
+          </p>
+        )}
+        <div className="flex justify-end gap-2 pt-1">
+          <Button variant="ghost" onClick={onClose}>
+            {send.isSuccess ? 'Done' : 'Cancel'}
+          </Button>
+          <Button
+            onClick={() => send.mutate()}
+            disabled={send.isPending || !to || !domains.length}
+          >
+            {send.isPending ? 'Sending…' : send.isSuccess ? 'Send again' : 'Send test email'}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
 }
 
 function railField(label: string, control: ReactElement): ReactElement {
@@ -103,6 +215,7 @@ function TemplatesPage(): ReactElement {
   const [form, setForm] = useState(empty);
   const [bodyTab, setBodyTab] = useState<'html' | 'text'>('html');
   const [deleting, setDeleting] = useState<TemplateRow | null>(null);
+  const [testing, setTesting] = useState(false);
 
   const openNew = (): void => {
     setForm(empty);
@@ -151,15 +264,15 @@ function TemplatesPage(): ReactElement {
     },
   });
 
-  // Escape closes the editor (unless the delete dialog is up - it handles its own).
+  // Escape closes the editor (unless a dialog is up - each handles its own).
   useEffect(() => {
-    if (!editing || deleting) return;
+    if (!editing || deleting || testing) return;
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') setEditing(null);
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [editing, deleting]);
+  }, [editing, deleting, testing]);
 
   const previewHtml = useMemo(() => fillVars(form.html), [form.html]);
   const previewSubject = useMemo(() => fillVars(form.subject), [form.subject]);
@@ -218,6 +331,13 @@ function TemplatesPage(): ReactElement {
               </span>
               <div className="ml-auto flex items-center gap-2">
                 <ErrorNote error={save.error} />
+                <Button
+                  variant="ghost"
+                  onClick={() => setTesting(true)}
+                  disabled={!form.subject || (!form.html.trim() && !form.text.trim())}
+                >
+                  Send test
+                </Button>
                 <Button variant="ghost" onClick={() => setEditing(null)}>
                   Cancel
                 </Button>
@@ -332,6 +452,19 @@ function TemplatesPage(): ReactElement {
             </div>
           </div>
         </div>
+      )}
+
+      {testing && (
+        <TestSendModal
+          subject={previewSubject}
+          html={form.html.trim() ? previewHtml : null}
+          text={form.text.trim() ? fillVars(form.text) : null}
+          domains={(domains.data ?? [])
+            .filter(d => d.status === 'active')
+            .map(d => ({ id: d.id, name: d.name }))}
+          defaultDomainId={form.domain_id}
+          onClose={() => setTesting(false)}
+        />
       )}
 
       {deleting && (

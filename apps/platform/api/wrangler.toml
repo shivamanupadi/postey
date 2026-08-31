@@ -16,6 +16,11 @@ migrations_dir = "src/db/migrations"
 binding = "BODIES"
 bucket_name = "postey-bodies-dev"
 
+# Test sends from the Templates page go straight through Email Service.
+# Local dev simulates sends unless remote = true is added.
+[[send_email]]
+name = "EMAIL"
+
 [vars]
 ENVIRONMENT = "development"
 SEND_URL = "http://localhost:6010"
