@@ -233,7 +233,7 @@ function DestroyWizard(): ReactElement {
               </p>
               <ul className="mt-2.5 space-y-1.5 text-[12.5px] leading-relaxed text-red-900/80">
                 <li>· 3 workers (send, dashboard, inbound)</li>
-                <li>· 2 queues + the delivery-event subscription</li>
+                <li>· queues + the delivery-event subscription</li>
                 <li>· D1 database - email log, templates, keys, suppressions</li>
                 <li>· R2 bucket - stored email bodies</li>
               </ul>

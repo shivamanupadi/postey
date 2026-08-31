@@ -2,15 +2,15 @@ import type { ReactElement, ReactNode } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { SiteChrome } from '../site/chrome';
 import {
-  CalendarClock,
-  Gauge,
   Inbox,
   KeyRound,
   LayoutTemplate,
   Plug,
+  RefreshCw,
   ScrollText,
   ShieldOff,
   Webhook,
+  Zap,
 } from 'lucide-react';
 
 export const Route = createFileRoute('/')({
@@ -28,7 +28,7 @@ const V1_FEATURES: { icon: ReactNode; title: string; body: string }[] = [
   {
     icon: <ScrollText />,
     title: 'Email log & previews',
-    body: 'Every send recorded with per-recipient status, full headers, and the rendered HTML - searchable, with configurable retention.',
+    body: 'Every send recorded with per-recipient status, full headers, and the rendered HTML - searchable from the dashboard.',
   },
   {
     icon: <LayoutTemplate />,
@@ -46,14 +46,14 @@ const V1_FEATURES: { icon: ReactNode; title: string; body: string }[] = [
     body: 'Signed delivered / bounced / complained / failed events to your endpoints, with retries and a delivery log.',
   },
   {
-    icon: <CalendarClock />,
-    title: 'Scheduled & idempotent sends',
-    body: 'Schedule delivery for later and retry requests safely - idempotency keys guarantee an email is sent exactly once.',
+    icon: <Zap />,
+    title: 'Instant, honest responses',
+    body: "Delivery happens in the request: the API returns Cloudflare's real answer - sent, or a clear 429/4xx with a Retry-After. No silent queue holding your mail.",
   },
   {
-    icon: <Gauge />,
-    title: 'Quota-aware queueing',
-    body: "Cloudflare's daily sending cap is reputation-gated and opaque. Postey learns it from rate-limit responses, backs off, and re-queues - emails stretch out, never fail.",
+    icon: <RefreshCw />,
+    title: 'Idempotent sends & retries',
+    body: 'Idempotency keys guarantee an email is sent exactly once - and a retry after a rate limit re-attempts the same message instead of replaying the failure.',
   },
   {
     icon: <KeyRound />,
@@ -62,8 +62,8 @@ const V1_FEATURES: { icon: ReactNode; title: string; body: string }[] = [
   },
   {
     icon: <Inbox />,
-    title: 'Inbound routing',
-    body: 'Replies and unsubscribe mailboxes route into a Worker via Email Routing - forward them, webhook them, or handle them in code.',
+    title: 'Unsubscribe handling',
+    body: 'Unsubscribe mailboxes and List-Unsubscribe posts route into a Worker via Email Routing and feed the suppression list automatically.',
   },
 ];
 
@@ -84,7 +84,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'How many emails can I send per day?',
-    a: "Cloudflare applies a reputation-based daily cap that starts conservative and grows with clean sending. Postey's queue paces sends against it and surfaces the discovered limit in your dashboard, with a link to request an increase.",
+    a: 'Cloudflare applies a reputation-based daily cap that starts conservative and grows with clean sending. If you hit it, the API tells you immediately - a 429 with a Retry-After - so your app can back off or fall back. You can also ask Cloudflare for a higher limit.',
   },
   {
     q: 'Does any of my data leave my account?',
@@ -160,7 +160,7 @@ function CodeBlock(): ReactElement {
   }'
 
 `}
-          <span className="text-cream/50">{`→ { "id": "msg_8fk2…", "status": "queued" }`}</span>
+          <span className="text-cream/50">{`→ 200 { "id": "msg_8fk2…" }  · delivered inline, no queue`}</span>
         </code>
       </pre>
     </div>
@@ -254,7 +254,7 @@ function Landing(): ReactElement {
               {
                 n: '02',
                 title: 'Provision & onboard',
-                body: 'Workers, D1, Queues, and R2 deploy automatically. One deep-linked click onboards your domain to Email Sending - SPF, DKIM, and DMARC records are created and locked for you.',
+                body: 'Workers, D1, and R2 deploy automatically. One deep-linked click onboards your domain to Email Sending - SPF, DKIM, and DMARC records are created and locked for you.',
               },
               {
                 n: '03',
@@ -315,12 +315,12 @@ function Landing(): ReactElement {
               {
                 name: 'send',
                 role: 'Public API worker',
-                body: 'Resend-compatible REST. Validates keys, checks suppressions, enforces idempotency, enqueues to Queues.',
+                body: "Resend-compatible REST. Validates keys, checks suppressions, enforces idempotency, and delivers inline through Email Service - the response is Cloudflare's real answer.",
               },
               {
-                name: 'send · consumer',
-                role: 'Delivery pipeline (same worker)',
-                body: 'Paces against your discovered daily quota, retries with backoff, records per-recipient status from the Email Service response.',
+                name: 'send · events',
+                role: 'Lifecycle consumer (same worker)',
+                body: 'Consumes Email Sending delivery events - upgrades sent into delivered, bounced, or complained, feeds the suppression list, and fires your webhooks.',
               },
               {
                 name: 'api + web',

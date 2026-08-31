@@ -316,7 +316,7 @@ function DeployWizard(): ReactElement {
               {
                 icon: Server,
                 title: 'We set Postey up for you',
-                desc: 'Three workers, a D1 database, an R2 bucket, and two queues - live on your workers.dev URLs in a few minutes.',
+                desc: 'Three workers, a D1 database, an R2 bucket, and a delivery-events queue - live on your workers.dev URLs in a few minutes.',
               },
               {
                 icon: MailCheck,
