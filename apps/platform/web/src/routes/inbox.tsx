@@ -1,9 +1,9 @@
 import { useEffect, useState, type FormEvent, type ReactElement } from 'react';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, MailOpen } from 'lucide-react';
+import { ExternalLink, MailOpen, Trash2 } from 'lucide-react';
 import { api, fmtTime } from '@/lib/api';
-import { Button, Dropdown, ErrorNote, Field, Input, Modal } from '@/lib/ui';
+import { Button, ConfirmDialog, Dropdown, ErrorNote, Field, Input, Modal } from '@/lib/ui';
 import type { InboxAddressRow } from './__root';
 
 interface InboxSearch {
@@ -84,17 +84,40 @@ function InboxPage(): ReactElement {
     ? `${selectedAddress.local_part}@${selectedAddress.domain_name}`
     : 'All mail';
 
+  const [removing, setRemoving] = useState(false);
+  const removeAddress = useMutation({
+    mutationFn: () => api.delete(`/api/inbox/addresses/${addr}`),
+    onSuccess: () => {
+      setRemoving(false);
+      void qc.invalidateQueries({ queryKey: ['inbox-addresses'] });
+      void qc.invalidateQueries({ queryKey: ['inbox-messages'] });
+      void navigate({ search: {} });
+    },
+  });
+
   return (
     <div className="flex h-[calc(100vh-72px)] gap-0 overflow-hidden rounded-2xl border border-line-soft bg-card shadow-[0_1px_2px_rgba(30,25,18,0.04)]">
       {/* message list */}
       <div className="flex w-[320px] shrink-0 flex-col border-r border-line-soft">
-        <div className="border-b border-line-soft px-4 py-3">
-          <h1 className="truncate font-mono text-[13.5px] font-semibold text-ink">{title}</h1>
-          <p className="mt-0.5 text-[11px] text-ink-soft">
-            {messages.data
-              ? `${messages.data.length} message${messages.data.length === 1 ? '' : 's'}`
-              : 'Loading…'}
-          </p>
+        <div className="flex items-start justify-between gap-2 border-b border-line-soft px-4 py-3">
+          <div className="min-w-0">
+            <h1 className="truncate font-mono text-[13.5px] font-semibold text-ink">{title}</h1>
+            <p className="mt-0.5 text-[11px] text-ink-soft">
+              {messages.data
+                ? `${messages.data.length} message${messages.data.length === 1 ? '' : 's'}`
+                : 'Loading…'}
+            </p>
+          </div>
+          {selectedAddress && (
+            <button
+              type="button"
+              aria-label={`Remove ${title}`}
+              onClick={() => setRemoving(true)}
+              className="shrink-0 rounded-lg p-1.5 text-ink-soft/70 transition hover:bg-bad-soft hover:text-bad"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {messages.data?.length ? (
@@ -160,6 +183,25 @@ function InboxPage(): ReactElement {
       </div>
 
       {creating && <NewAddressModal onClose={() => void navigate({ search: prev => ({ ...prev, new: undefined }) })} />}
+
+      {removing && selectedAddress && (
+        <ConfirmDialog
+          title={`Remove ${title}?`}
+          sub="This cannot be undone."
+          confirmLabel="Remove address"
+          busy={removeAddress.isPending}
+          onConfirm={() => removeAddress.mutate()}
+          onCancel={() => setRemoving(false)}
+        >
+          <p className="text-[12.5px] leading-relaxed text-ink-soft">
+            Mail to this address bounces again with "not monitored", and its{' '}
+            {selectedAddress.message_count} stored message
+            {Number(selectedAddress.message_count) === 1 ? '' : 's'} (bodies included) are deleted.
+            Replies you sent stay in the email log.
+          </p>
+          <ErrorNote error={removeAddress.error} />
+        </ConfirmDialog>
+      )}
     </div>
   );
 }

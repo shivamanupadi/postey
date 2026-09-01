@@ -61,6 +61,13 @@ app.post(
 
 app.delete('/inbox/addresses/:id', async c => {
   const id = c.req.param('id');
+  // Stored bodies go with the address - no orphaned R2 objects.
+  const keys = await c.env.DB.prepare(
+    'SELECT body_r2_key FROM inbox_messages WHERE address_id = ? AND body_r2_key IS NOT NULL'
+  )
+    .bind(id)
+    .all<{ body_r2_key: string }>();
+  await Promise.all(keys.results.map(k => c.env.BODIES.delete(k.body_r2_key).catch(() => undefined)));
   await c.env.DB.batch([
     c.env.DB.prepare('DELETE FROM inbox_messages WHERE address_id = ?').bind(id),
     c.env.DB.prepare('DELETE FROM inbox_addresses WHERE id = ?').bind(id),
@@ -198,10 +205,15 @@ app.post(
     const id = newId('msg');
     const now = Date.now();
     const bodyKey = `bodies/${id}.json`;
-    await c.env.BODIES.put(
-      bodyKey,
-      JSON.stringify({ html: input.html ?? null, text: input.text ?? null })
-    );
+    /* Plain-text composer, but recipients' clients get a clean HTML part too. */
+    const escapeHtml = (s: string): string =>
+      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const html =
+      input.html ??
+      (input.text
+        ? `<div style="font-family:-apple-system,Segoe UI,sans-serif;font-size:14px;line-height:1.6;white-space:pre-wrap">${escapeHtml(input.text)}</div>`
+        : null);
+    await c.env.BODIES.put(bodyKey, JSON.stringify({ html, text: input.text ?? null }));
 
     await c.env.DB.batch([
       c.env.DB.prepare(
@@ -232,7 +244,7 @@ app.post(
         to: [inbound.from_email],
         from: fromEmail,
         subject,
-        ...(input.html ? { html: input.html } : {}),
+        ...(html ? { html } : {}),
         ...(input.text ? { text: input.text } : {}),
         ...(inbound.message_id_header
           ? {

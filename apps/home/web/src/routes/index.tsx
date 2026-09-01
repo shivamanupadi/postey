@@ -62,8 +62,8 @@ const V1_FEATURES: { icon: ReactNode; title: string; body: string }[] = [
   },
   {
     icon: <Inbox />,
-    title: 'Unsubscribe handling',
-    body: 'Unsubscribe mailboxes and List-Unsubscribe posts route into a Worker via Email Routing and feed the suppression list automatically.',
+    title: 'Inbox (beta): two-way email',
+    body: 'Replies land back in your dashboard, threaded to the send they answer - with a reply webhook and MCP tools so your agents can read the answers. Unsubscribes still auto-suppress.',
   },
 ];
 
