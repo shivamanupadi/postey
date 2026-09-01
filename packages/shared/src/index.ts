@@ -145,6 +145,7 @@ export const EVENT_TYPES = [
   'failed',
   'suppressed',
   'rate_limited',
+  'reply.received',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -156,10 +157,15 @@ export interface WebhookEvent {
   type: `email.${EventType}`;
   created_at: string;
   data: {
-    message_id: string;
+    /** Outbound message id; for email.reply.received, the send being replied
+     *  to (absent when the inbound mail started a new thread). */
+    message_id?: string;
+    /** Inbound mail id (inb_…) - present on email.reply.received. */
+    reply_id?: string;
     recipient?: string;
     subject?: string;
     from?: string;
+    to?: string;
     tags?: { name: string; value: string }[];
     detail?: string;
   };

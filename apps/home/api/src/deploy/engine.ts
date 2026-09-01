@@ -589,6 +589,7 @@ export async function provisionInstance(ctx: EngineCtx): Promise<ProvisionResult
       compatibility_date: '2026-08-01',
       bindings: [
         { type: 'd1', name: 'DB', id: d1Id },
+        { type: 'r2_bucket', name: 'BODIES', bucket_name: N.bucket },
         { type: 'plain_text', name: 'ENVIRONMENT', text: 'production' },
       ],
     });

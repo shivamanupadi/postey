@@ -123,6 +123,33 @@ const TOOLS: ToolDef[] = [
     request: a => ({ method: 'POST', path: '/api/templates', body: a }),
   },
   {
+    name: 'list_replies',
+    description:
+      'Inbound mail received on this instance (replies to sends, and mail to registered inbox addresses), newest first. Each row includes reply_to_message_id when it answers an email you sent.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'Max results (default 20, max 50)' },
+        unread: { type: 'boolean', description: 'Only mail not yet read' },
+      },
+    },
+    request: a => ({
+      method: 'GET',
+      path: `/api/replies?limit=${Number(a.limit) || 20}${a.unread ? '&unread=true' : ''}`,
+    }),
+  },
+  {
+    name: 'get_reply',
+    description:
+      'Full content of one inbound mail (text + html), with sender, subject, and the outbound message id it replies to.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: str('Inbound mail id (inb_…) from list_replies') },
+      required: ['id'],
+    },
+    request: a => ({ method: 'GET', path: `/api/replies/${a.id}` }),
+  },
+  {
     name: 'suppress_address',
     description:
       'Add an address to the suppression list - future sends to it are blocked at the API boundary.',

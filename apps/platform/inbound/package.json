@@ -10,7 +10,8 @@
     "clean": "rimraf node_modules .turbo dist .wrangler"
   },
   "dependencies": {
-    "@postey/shared": "*"
+    "@postey/shared": "*",
+    "postal-mime": "^3.0.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",

@@ -13,5 +13,10 @@ database_name = "postey-db-dev"
 database_id = "postey-db-local"
 migrations_dir = "../api/src/db/migrations"
 
+# Inbox message bodies (html/text JSON) live next to outbound bodies.
+[[r2_buckets]]
+binding = "BODIES"
+bucket_name = "postey-bodies-dev"
+
 [vars]
 ENVIRONMENT = "development"

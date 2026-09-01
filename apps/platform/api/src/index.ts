@@ -18,6 +18,7 @@ import {
 } from './lib/auth';
 import { resourcesRoute } from './routes/resources';
 import { messagesRoute } from './routes/messages';
+import { inboxRoute } from './routes/inbox';
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -93,7 +94,7 @@ app.get('/api/me', async c => {
 /* ── authenticated dashboard API ─────────────────────────────────── */
 
 app.use('/api/*', requireAuth);
-const routes = app.route('/api', messagesRoute).route('/api', resourcesRoute);
+const routes = app.route('/api', messagesRoute).route('/api', resourcesRoute).route('/api', inboxRoute);
 
 /* Unmatched non-API paths are SPA routes: serve the assets fallback. */
 app.notFound(c => {

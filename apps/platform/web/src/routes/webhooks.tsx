@@ -144,6 +144,7 @@ const ALL_EVENTS = [
   'email.complained',
   'email.failed',
   'email.suppressed',
+  'email.reply.received',
 ];
 
 const eventsOf = (h: WebhookRow): string[] => {

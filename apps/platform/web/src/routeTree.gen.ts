@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DomainsRouteImport } from './routes/domains'
+import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as KeysRouteImport } from './routes/keys'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as McpRouteImport } from './routes/mcp'
@@ -28,6 +29,11 @@ const IndexRoute = IndexRouteImport.update({
 const DomainsRoute = DomainsRouteImport.update({
   id: '/domains',
   path: '/domains',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InboxRoute = InboxRouteImport.update({
+  id: '/inbox',
+  path: '/inbox',
   getParentRoute: () => rootRouteImport,
 } as any)
 const KeysRoute = KeysRouteImport.update({
@@ -74,6 +80,7 @@ const EmailsIdRoute = EmailsIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/domains': typeof DomainsRoute
+  '/inbox': typeof InboxRoute
   '/keys': typeof KeysRoute
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
@@ -86,6 +93,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/domains': typeof DomainsRoute
+  '/inbox': typeof InboxRoute
   '/keys': typeof KeysRoute
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
@@ -99,6 +107,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/domains': typeof DomainsRoute
+  '/inbox': typeof InboxRoute
   '/keys': typeof KeysRoute
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
@@ -113,6 +122,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/domains'
+    | '/inbox'
     | '/keys'
     | '/login'
     | '/mcp'
@@ -125,6 +135,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/domains'
+    | '/inbox'
     | '/keys'
     | '/login'
     | '/mcp'
@@ -137,6 +148,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/domains'
+    | '/inbox'
     | '/keys'
     | '/login'
     | '/mcp'
@@ -150,6 +162,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DomainsRoute: typeof DomainsRoute
+  InboxRoute: typeof InboxRoute
   KeysRoute: typeof KeysRoute
   LoginRoute: typeof LoginRoute
   McpRoute: typeof McpRoute
@@ -174,6 +187,13 @@ declare module '@tanstack/react-router' {
       path: '/domains'
       fullPath: '/domains'
       preLoaderRoute: typeof DomainsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/inbox': {
+      id: '/inbox'
+      path: '/inbox'
+      fullPath: '/inbox'
+      preLoaderRoute: typeof InboxRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/keys': {
@@ -238,6 +258,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DomainsRoute: DomainsRoute,
+  InboxRoute: InboxRoute,
   KeysRoute: KeysRoute,
   LoginRoute: LoginRoute,
   McpRoute: McpRoute,

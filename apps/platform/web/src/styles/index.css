@@ -33,6 +33,14 @@ body {
   @apply bg-paper text-ink font-sans antialiased;
 }
 
+/* Inbox product: same linen ground, indigo accent - you always know which
+ * product you're standing in. Utilities resolve through these vars. */
+.product-inbox {
+  --color-accent: #3f5bd9;
+  --color-accent-deep: #3f51c9;
+  --color-accent-soft: #e7ebfc;
+}
+
 /* Inter headings carry the openseo treatment: medium-tight tracking. */
 h1,
 h2,

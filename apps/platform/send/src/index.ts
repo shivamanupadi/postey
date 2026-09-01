@@ -386,6 +386,51 @@ app.get('/emails', listEmails);
 app.get('/api/emails/:id', getEmail);
 app.get('/emails/:id', getEmail);
 
+/* ── inbound replies (read-only; the dashboard's Inbox writes) ───── */
+
+async function listReplies(c: AppCtx): Promise<Response> {
+  const key = c.get('apiKey');
+  const limit = Math.min(Number(c.req.query('limit') ?? 20), 50);
+  const unreadOnly = c.req.query('unread') === 'true';
+  const where: string[] = [];
+  const binds: unknown[] = [];
+  if (key.domain_id) {
+    where.push('m.domain_id = ?');
+    binds.push(key.domain_id);
+  }
+  if (unreadOnly) where.push('m.read_at IS NULL');
+  binds.push(limit);
+  const rows = await c.env.DB.prepare(
+    `SELECT m.id, m.from_email, m.from_name, m.to_email, m.subject, m.snippet,
+            m.reply_to_message_id, m.read_at, m.created_at
+     FROM inbox_messages m ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+     ORDER BY m.created_at DESC LIMIT ?`
+  )
+    .bind(...binds)
+    .all();
+  return c.json({ data: rows.results });
+}
+
+async function getReply(c: AppCtx): Promise<Response> {
+  const key = c.get('apiKey');
+  const row = await c.env.DB.prepare('SELECT * FROM inbox_messages WHERE id = ?')
+    .bind(c.req.param('id'))
+    .first<{ domain_id: string; body_r2_key: string | null } & Record<string, unknown>>();
+  if (!row) return c.json({ error: 'Not found' }, 404);
+  if (key.domain_id && row.domain_id !== key.domain_id) return c.json({ error: 'Not found' }, 404);
+  const body = row.body_r2_key ? await c.env.BODIES.get(row.body_r2_key) : null;
+  const content = body
+    ? ((await body.json()) as { html: string | null; text: string | null })
+    : { html: null, text: null };
+  const { body_r2_key: _key, ...rest } = row;
+  return c.json({ data: { ...rest, text: content.text, html: content.html } });
+}
+
+app.get('/api/replies', listReplies);
+app.get('/replies', listReplies);
+app.get('/api/replies/:id', getReply);
+app.get('/replies/:id', getReply);
+
 app.get('/api/templates', async c => {
   const key = c.get('apiKey');
   // A domain-scoped key sees shared templates plus its own domain's.
