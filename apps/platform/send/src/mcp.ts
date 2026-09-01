@@ -150,6 +150,20 @@ const TOOLS: ToolDef[] = [
     request: a => ({ method: 'GET', path: `/api/replies/${a.id}` }),
   },
   {
+    name: 'reply_to',
+    description:
+      'Reply to an inbound mail as the address that received it. The reply threads into the recipient\'s mail client (In-Reply-To) and is recorded in the email log. Plain text; suppressed senders are refused.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: str('Inbound mail id (inb_…) from list_replies'),
+        text: str('Plain-text reply body'),
+      },
+      required: ['id', 'text'],
+    },
+    request: a => ({ method: 'POST', path: `/api/replies/${a.id}/reply`, body: { text: a.text } }),
+  },
+  {
     name: 'suppress_address',
     description:
       'Add an address to the suppression list - future sends to it are blocked at the API boundary.',

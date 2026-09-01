@@ -386,7 +386,7 @@ app.get('/emails', listEmails);
 app.get('/api/emails/:id', getEmail);
 app.get('/emails/:id', getEmail);
 
-/* ── inbound replies (read-only; the dashboard's Inbox writes) ───── */
+/* ── inbound replies (the dashboard's Inbox is the other writer) ─── */
 
 async function listReplies(c: AppCtx): Promise<Response> {
   const key = c.get('apiKey');
@@ -422,14 +422,152 @@ async function getReply(c: AppCtx): Promise<Response> {
   const content = body
     ? ((await body.json()) as { html: string | null; text: string | null })
     : { html: null, text: null };
+  // Reading marks it read - agent reads clear the dashboard's unread badges
+  // exactly like a human opening the thread.
+  if (!row.read_at) {
+    c.executionCtx.waitUntil(
+      c.env.DB.prepare('UPDATE inbox_messages SET read_at = ? WHERE id = ? AND read_at IS NULL')
+        .bind(Date.now(), row.id)
+        .run()
+        .then(() => undefined)
+        .catch(() => undefined)
+    );
+  }
   const { body_r2_key: _key, ...rest } = row;
   return c.json({ data: { ...rest, text: content.text, html: content.html } });
+}
+
+/** Reply as the address that received the mail - same shape as the dashboard
+ *  composer: threaded via In-Reply-To, recorded in the outbound log. */
+async function replyToInbound(c: AppCtx): Promise<Response> {
+  const key = c.get('apiKey');
+  const input = (await c.req.json().catch(() => null)) as { text?: string } | null;
+  const text = input?.text?.trim();
+  if (!text) return c.json({ error: 'text is required' }, 422);
+  if (text.length > 500_000) return c.json({ error: 'Reply too large' }, 422);
+
+  const inbound = await c.env.DB.prepare(
+    `SELECT m.id, m.domain_id, m.from_email, m.subject, m.message_id_header,
+            a.local_part, d.name AS domain_name, d.status AS domain_status
+     FROM inbox_messages m
+     JOIN inbox_addresses a ON a.id = m.address_id
+     JOIN domains d ON d.id = a.domain_id
+     WHERE m.id = ?`
+  )
+    .bind(c.req.param('id'))
+    .first<{
+      id: string;
+      domain_id: string;
+      from_email: string;
+      subject: string;
+      message_id_header: string | null;
+      local_part: string;
+      domain_name: string;
+      domain_status: string;
+    }>();
+  if (!inbound) return c.json({ error: 'Not found' }, 404);
+  if (key.domain_id && inbound.domain_id !== key.domain_id) {
+    return c.json({ error: 'Not found' }, 404);
+  }
+  if (inbound.domain_status !== 'active') {
+    return c.json({ error: `${inbound.domain_name} is not active` }, 409);
+  }
+  const suppressedRow = await c.env.DB.prepare('SELECT 1 FROM suppressions WHERE address = ? LIMIT 1')
+    .bind(inbound.from_email)
+    .first();
+  if (suppressedRow) {
+    return c.json({ error: `${inbound.from_email} is on the suppression list` }, 409);
+  }
+
+  const fromEmail = `${inbound.local_part}@${inbound.domain_name}`;
+  const subject = /^re:/i.test(inbound.subject) ? inbound.subject : `Re: ${inbound.subject}`;
+  const id = newId('msg');
+  const now = Date.now();
+  const escapeHtml = (s: string): string =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const html = `<div style="font-family:-apple-system,Segoe UI,sans-serif;font-size:14px;line-height:1.6;white-space:pre-wrap">${escapeHtml(text)}</div>`;
+  const bodyKey = `bodies/${id}.json`;
+  await c.env.BODIES.put(bodyKey, JSON.stringify({ html, text }));
+
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      `INSERT INTO messages (id, domain_id, api_key_id, from_email, to_json, reply_to, subject,
+         body_r2_key, status, in_reply_to_inbox_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'sending', ?, ?)`
+    ).bind(
+      id,
+      inbound.domain_id,
+      key.id,
+      fromEmail,
+      JSON.stringify([inbound.from_email]),
+      fromEmail,
+      subject,
+      bodyKey,
+      inbound.id,
+      now
+    ),
+    c.env.DB.prepare(
+      "INSERT INTO message_recipients (message_id, address, kind, status, updated_at) VALUES (?, ?, 'to', 'queued', ?)"
+    ).bind(id, inbound.from_email, now),
+    c.env.DB.prepare(
+      "INSERT INTO message_events (id, message_id, event, meta_json, created_at) VALUES (?, ?, 'queued', ?, ?)"
+    ).bind(newId('evt'), id, JSON.stringify({ reply_to: inbound.id }), now),
+  ]);
+
+  try {
+    const response = await c.env.EMAIL.send({
+      to: [inbound.from_email],
+      from: fromEmail,
+      subject,
+      html,
+      text,
+      ...(inbound.message_id_header
+        ? {
+            headers: {
+              'In-Reply-To': inbound.message_id_header,
+              References: inbound.message_id_header,
+            },
+          }
+        : {}),
+    });
+    const done = Date.now();
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        "UPDATE messages SET status = 'sent', provider_message_id = ?, sent_at = ?, completed_at = ? WHERE id = ?"
+      ).bind(response?.messageId ?? null, done, done, id),
+      c.env.DB.prepare(
+        "UPDATE message_recipients SET status = 'sent', updated_at = ? WHERE message_id = ?"
+      ).bind(done, id),
+      c.env.DB.prepare(
+        "INSERT INTO message_events (id, message_id, event, meta_json, created_at) VALUES (?, ?, 'sent', NULL, ?)"
+      ).bind(newId('evt'), id, done),
+      c.env.DB.prepare(
+        'INSERT INTO quota_usage (day, sent) VALUES (?, 1) ON CONFLICT(day) DO UPDATE SET sent = sent + 1'
+      ).bind(new Date().toISOString().slice(0, 10)),
+    ]);
+    return c.json({ data: { id } });
+  } catch (raw) {
+    const err = raw as Error & { code?: string };
+    const code = err.code ?? 'E_UNKNOWN';
+    const done = Date.now();
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        "UPDATE messages SET status = 'failed', error_code = ?, error_message = ?, completed_at = ? WHERE id = ?"
+      ).bind(code, (err.message ?? '').slice(0, 500), done, id),
+      c.env.DB.prepare(
+        "UPDATE message_recipients SET status = 'failed', error = ?, updated_at = ? WHERE message_id = ?"
+      ).bind(code, done, id),
+    ]);
+    return c.json({ error: `${code}: ${err.message ?? 'send failed'}` }, 502);
+  }
 }
 
 app.get('/api/replies', listReplies);
 app.get('/replies', listReplies);
 app.get('/api/replies/:id', getReply);
 app.get('/replies/:id', getReply);
+app.post('/api/replies/:id/reply', replyToInbound);
+app.post('/replies/:id/reply', replyToInbound);
 
 app.get('/api/templates', async c => {
   const key = c.get('apiKey');
