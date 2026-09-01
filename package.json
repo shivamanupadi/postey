@@ -2,8 +2,9 @@
   "name": "postey",
   "private": true,
   "version": "0.0.30",
+  "license": "MIT",
   "packageManager": "bun@1.3.14",
-  "description": "Postey - Self-hosted transactional email & newsletters on Cloudflare",
+  "description": "Postey - Self-hosted email for apps and agents on Cloudflare: transactional Send + two-way Inbox",
   "workspaces": [
     "apps/home/*",
     "apps/platform/*",

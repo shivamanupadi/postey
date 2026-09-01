@@ -2,6 +2,7 @@
   "name": "@postey/platform-send",
   "private": true,
   "version": "0.0.1",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev --port 6010 --persist-to ../../../.wrangler-state",
