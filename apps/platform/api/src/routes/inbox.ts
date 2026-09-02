@@ -585,13 +585,21 @@ async function storeAttachments(
   return manifest;
 }
 
+/* Mirror the send worker's proven shape EXACTLY: the real Email Service
+ * requires disposition ('inline' | 'attachment') on every attachment -
+ * omitting it fails with E_VALIDATION_ERROR (the local simulated binding
+ * accepts anything, which is how this slipped through). */
 const emailAttachments = (files: DecodedFile[]): object =>
   files.length
     ? {
         attachments: files.map(f => ({
-          content: f.bytes.buffer as ArrayBuffer,
+          content: f.bytes.buffer.slice(
+            f.bytes.byteOffset,
+            f.bytes.byteOffset + f.bytes.byteLength
+          ) as ArrayBuffer,
           filename: f.filename,
           type: f.type,
+          disposition: 'attachment',
         })),
       }
     : {};
