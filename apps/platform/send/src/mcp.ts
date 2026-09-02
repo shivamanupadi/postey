@@ -167,6 +167,17 @@ const TOOLS: ToolDef[] = [
     }),
   },
   {
+    name: 'get_conversation',
+    description:
+      'The whole email exchange around one message as a chronological list - the original send, every reply, every answer, bodies and attachment metadata included. Accepts any id in the thread (msg_… or inb_…). One call, full context; reading it marks inbound mail read.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: str('Any message id in the thread - outbound (msg_…) or inbound (inb_…)') },
+      required: ['id'],
+    },
+    request: a => ({ method: 'GET', path: `/api/conversations/${a.id}` }),
+  },
+  {
     name: 'reply_to',
     description:
       'Reply to an inbound mail as the address that received it. The reply threads into the recipient\'s mail client (In-Reply-To) and is recorded in the email log. Plain text; suppressed senders are refused.',

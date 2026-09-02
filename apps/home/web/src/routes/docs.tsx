@@ -192,6 +192,10 @@ function DocsPage(): ReactElement {
                 'POST /api/replies/:id/reply',
                 '{ text } - replies as the address that received the mail, threaded via In-Reply-To, recorded in the send log like any send.',
               ],
+              [
+                'GET /api/conversations/:id',
+                'The whole exchange around any message id (msg_… or inb_…) as one chronological list - sends, replies, answers, bodies and attachment metadata included. Reading it marks inbound mail read.',
+              ],
             ]}
           />
 
@@ -204,6 +208,14 @@ function DocsPage(): ReactElement {
             - with up to three attempts and a delivery log. A <strong>Send test</strong> button in
             the dashboard fires a signed sample event so you can verify your handler before real
             traffic.
+          </P>
+          <P>
+            <Mono>email.reply.received</Mono> is full-fidelity: alongside the ids it carries the
+            parsed <Mono>text</Mono> (capped at 20k chars, with <Mono>text_truncated</Mono> set
+            when cut) and the attachment manifest{' '}
+            <Mono>[{'{ index, filename, type, size }'}]</Mono> - so most receivers can act on a
+            reply without fetching anything back. HTML stays behind{' '}
+            <Mono>GET /api/replies/:id</Mono>.
           </P>
           <H3>Verifying signatures</H3>
           <P>
@@ -264,10 +276,11 @@ function verifyPostey(rawBody, signatureHeader) {
   https://<your-send-worker>/api/mcp \\
   --header "Authorization: Bearer pk_live_…"`}</Code>
           <P>
-            Eleven tools: <Mono>send_email</Mono>, <Mono>get_email</Mono>,{' '}
+            Twelve tools: <Mono>send_email</Mono>, <Mono>get_email</Mono>,{' '}
             <Mono>list_emails</Mono>, <Mono>list_templates</Mono>, <Mono>create_template</Mono>,{' '}
             <Mono>list_replies</Mono>, <Mono>get_reply</Mono>, <Mono>get_reply_attachment</Mono>,{' '}
-            <Mono>reply_to</Mono>, <Mono>suppress_address</Mono>, <Mono>list_suppressions</Mono>.
+            <Mono>get_conversation</Mono>, <Mono>reply_to</Mono>, <Mono>suppress_address</Mono>,{' '}
+            <Mono>list_suppressions</Mono>.
             Every tool dispatches to the real REST routes, so key scoping, idempotency, and
             suppression checks apply exactly as they do to your own code.
           </P>

@@ -521,6 +521,188 @@ async function getReplyAttachment(c: AppCtx): Promise<Response> {
   });
 }
 
+/* ── conversations ────────────────────────────────────────────────────
+ * A thread in Postey is a chain of alternating links: an outbound send,
+ * inbound replies pointing at it (reply_to_message_id), our answers
+ * pointing at those (in_reply_to_inbox_id), further replies pointing at
+ * the answers, and so on. Given ANY id in the chain, expand both
+ * directions to a fixpoint and return the whole exchange - bodies
+ * included - as one chronological list. One call, full context. */
+
+const CONVERSATION_CAP = 50;
+
+async function getConversation(c: AppCtx): Promise<Response> {
+  const key = c.get('apiKey');
+  const seed = c.req.param('id') ?? '';
+  if (!seed) return c.json({ error: 'Not found' }, 404);
+  const msgIds = new Set<string>();
+  const inbIds = new Set<string>();
+  if (seed.startsWith('inb')) inbIds.add(seed);
+  else msgIds.add(seed);
+
+  const expand = async (
+    table: string,
+    column: string,
+    values: string[]
+  ): Promise<{ id: string }[]> => {
+    if (values.length === 0) return [];
+    const marks = values.map(() => '?').join(', ');
+    const rows = await c.env.DB.prepare(
+      `SELECT id, ${column} AS link FROM ${table} WHERE ${column} IN (${marks})`
+    )
+      .bind(...values)
+      .all<{ id: string }>();
+    return rows.results;
+  };
+
+  for (let round = 0; round < 10; round++) {
+    const before = msgIds.size + inbIds.size;
+    if (before > CONVERSATION_CAP) break;
+
+    // children: inbound replies to known sends; our sends answering known inbound
+    for (const r of await expand('inbox_messages', 'reply_to_message_id', [...msgIds])) {
+      inbIds.add(r.id);
+    }
+    for (const r of await expand('messages', 'in_reply_to_inbox_id', [...inbIds])) {
+      msgIds.add(r.id);
+    }
+    // parents: what known rows point at
+    if (msgIds.size > 0) {
+      const marks = [...msgIds].map(() => '?').join(', ');
+      const rows = await c.env.DB.prepare(
+        `SELECT in_reply_to_inbox_id AS link FROM messages WHERE id IN (${marks}) AND in_reply_to_inbox_id IS NOT NULL`
+      )
+        .bind(...msgIds)
+        .all<{ link: string }>();
+      for (const r of rows.results) inbIds.add(r.link);
+    }
+    if (inbIds.size > 0) {
+      const marks = [...inbIds].map(() => '?').join(', ');
+      const rows = await c.env.DB.prepare(
+        `SELECT reply_to_message_id AS link FROM inbox_messages WHERE id IN (${marks}) AND reply_to_message_id IS NOT NULL`
+      )
+        .bind(...inbIds)
+        .all<{ link: string }>();
+      for (const r of rows.results) msgIds.add(r.link);
+    }
+    if (msgIds.size + inbIds.size === before) break;
+  }
+
+  const loadBody = async (
+    bodyKey: string | null
+  ): Promise<{
+    html: string | null;
+    text: string | null;
+    attachments?: { key: string; filename: string; type: string; size: number; disposition: string }[];
+  }> => {
+    if (!bodyKey) return { html: null, text: null };
+    const obj = await c.env.BODIES.get(bodyKey).catch(() => null);
+    if (!obj) return { html: null, text: null };
+    try {
+      return (await obj.json()) as { html: string | null; text: string | null };
+    } catch {
+      return { html: null, text: null };
+    }
+  };
+
+  const outbound =
+    msgIds.size > 0
+      ? (
+          await c.env.DB.prepare(
+            `SELECT id, domain_id, from_email, from_name, to_json, subject, status, body_r2_key,
+                    in_reply_to_inbox_id, created_at, sent_at
+             FROM messages WHERE id IN (${[...msgIds].map(() => '?').join(', ')})`
+          )
+            .bind(...msgIds)
+            .all<Record<string, unknown>>()
+        ).results
+      : [];
+  const inbound =
+    inbIds.size > 0
+      ? (
+          await c.env.DB.prepare(
+            `SELECT id, domain_id, from_email, from_name, to_email, subject, body_r2_key,
+                    reply_to_message_id, read_at, created_at
+             FROM inbox_messages WHERE id IN (${[...inbIds].map(() => '?').join(', ')})`
+          )
+            .bind(...inbIds)
+            .all<Record<string, unknown>>()
+        ).results
+      : [];
+
+  if (outbound.length + inbound.length === 0) return c.json({ error: 'Not found' }, 404);
+  if (
+    key.domain_id &&
+    [...outbound, ...inbound].some(r => r.domain_id !== key.domain_id)
+  ) {
+    return c.json({ error: 'Not found' }, 404);
+  }
+
+  const entries = await Promise.all([
+    ...outbound.map(async r => {
+      const body = await loadBody(r.body_r2_key as string | null);
+      return {
+        kind: 'outbound' as const,
+        id: r.id,
+        from: r.from_email,
+        from_name: r.from_name,
+        to: JSON.parse((r.to_json as string) ?? '[]') as string[],
+        subject: r.subject,
+        status: r.status,
+        text: body.text,
+        html: body.html,
+        in_reply_to: r.in_reply_to_inbox_id,
+        created_at: r.created_at,
+        sent_at: r.sent_at,
+      };
+    }),
+    ...inbound.map(async r => {
+      const body = await loadBody(r.body_r2_key as string | null);
+      return {
+        kind: 'inbound' as const,
+        id: r.id,
+        from: r.from_email,
+        from_name: r.from_name,
+        to: [r.to_email as string],
+        subject: r.subject,
+        text: body.text,
+        html: body.html,
+        attachments: (body.attachments ?? []).map(({ key: _k, ...meta }, index) => ({
+          index,
+          ...meta,
+        })),
+        in_reply_to: r.reply_to_message_id,
+        read_at: r.read_at,
+        created_at: r.created_at,
+      };
+    }),
+  ]);
+  entries.sort((a, b) => Number(a.created_at) - Number(b.created_at));
+
+  /* Reading the conversation reads its mail - same semantics as get_reply. */
+  const unread = inbound.filter(r => !r.read_at).map(r => r.id as string);
+  if (unread.length > 0) {
+    c.executionCtx.waitUntil(
+      c.env.DB.prepare(
+        `UPDATE inbox_messages SET read_at = ? WHERE id IN (${unread.map(() => '?').join(', ')}) AND read_at IS NULL`
+      )
+        .bind(Date.now(), ...unread)
+        .run()
+        .then(() => undefined)
+        .catch(() => undefined)
+    );
+  }
+
+  return c.json({
+    data: {
+      seed,
+      message_count: entries.length,
+      capped: msgIds.size + inbIds.size > CONVERSATION_CAP,
+      messages: entries,
+    },
+  });
+}
+
 /** Reply as the address that received the mail - same shape as the dashboard
  *  composer: threaded via In-Reply-To, recorded in the outbound log. */
 async function replyToInbound(c: AppCtx): Promise<Response> {
@@ -652,6 +834,8 @@ app.get('/api/replies/:id', getReply);
 app.get('/replies/:id', getReply);
 app.get('/api/replies/:id/attachments/:idx', getReplyAttachment);
 app.get('/replies/:id/attachments/:idx', getReplyAttachment);
+app.get('/api/conversations/:id', getConversation);
+app.get('/conversations/:id', getConversation);
 app.post('/api/replies/:id/reply', replyToInbound);
 app.post('/replies/:id/reply', replyToInbound);
 

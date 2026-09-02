@@ -30,6 +30,7 @@ const TOOLS: { name: string; desc: string }[] = [
   { name: 'list_replies', desc: 'inbound mail, threaded to its send' },
   { name: 'get_reply', desc: 'full inbound message content' },
   { name: 'get_reply_attachment', desc: 'attachment content, base64' },
+  { name: 'get_conversation', desc: 'the whole thread, one call' },
   { name: 'reply_to', desc: 'answer as the receiving address' },
   { name: 'list_templates', desc: 'available templates + variables' },
   { name: 'create_template', desc: 'save a reusable template' },

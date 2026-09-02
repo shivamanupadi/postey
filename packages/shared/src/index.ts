@@ -168,6 +168,12 @@ export interface WebhookEvent {
     to?: string;
     tags?: { name: string; value: string }[];
     detail?: string;
+    /* email.reply.received carries the parsed message so receivers can act
+     * without a fetch back. text is capped at 20k chars; html stays behind
+     * the replies API. */
+    text?: string;
+    text_truncated?: boolean;
+    attachments?: { index: number; filename: string; type: string; size: number }[];
   };
 }
 

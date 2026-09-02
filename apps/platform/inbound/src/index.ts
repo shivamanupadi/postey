@@ -166,12 +166,24 @@ async function storeInbound(
     )
     .run();
 
+  /* Full-fidelity webhook: receivers get the parsed text (capped) and the
+   * attachment manifest inline, so acting on a reply needs no fetch back.
+   * html stays behind GET /api/replies/:id - it can be arbitrarily large. */
+  const webhookText = text ?? (html ? stripTags(html).replace(/\s+/g, ' ').trim() : '');
   await dispatchReplyWebhook(env, ctx, {
     reply_id: id,
     from: parsed.from?.address?.toLowerCase() ?? meta.from,
     to: meta.to,
     subject: parsed.subject ?? '(no subject)',
     ...(parentId ? { message_id: parentId } : {}),
+    text: webhookText.slice(0, 20_000),
+    ...(webhookText.length > 20_000 ? { text_truncated: true } : {}),
+    attachments: attachments.map((a, index) => ({
+      index,
+      filename: a.filename,
+      type: a.type,
+      size: a.size,
+    })),
   });
 }
 
