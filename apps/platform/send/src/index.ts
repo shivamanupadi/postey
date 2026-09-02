@@ -420,8 +420,12 @@ async function getReply(c: AppCtx): Promise<Response> {
   if (key.domain_id && row.domain_id !== key.domain_id) return c.json({ error: 'Not found' }, 404);
   const body = row.body_r2_key ? await c.env.BODIES.get(row.body_r2_key) : null;
   const content = body
-    ? ((await body.json()) as { html: string | null; text: string | null })
-    : { html: null, text: null };
+    ? ((await body.json()) as {
+        html: string | null;
+        text: string | null;
+        attachments?: { key: string; filename: string; type: string; size: number; disposition: string }[];
+      })
+    : { html: null, text: null, attachments: [] };
   // Reading marks it read - agent reads clear the dashboard's unread badges
   // exactly like a human opening the thread.
   if (!row.read_at) {
@@ -434,7 +438,14 @@ async function getReply(c: AppCtx): Promise<Response> {
     );
   }
   const { body_r2_key: _key, ...rest } = row;
-  return c.json({ data: { ...rest, text: content.text, html: content.html } });
+  return c.json({
+    data: {
+      ...rest,
+      text: content.text,
+      html: content.html,
+      attachments: (content.attachments ?? []).map(({ key: _k, ...meta }) => meta),
+    },
+  });
 }
 
 /** Reply as the address that received the mail - same shape as the dashboard

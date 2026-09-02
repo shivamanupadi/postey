@@ -110,8 +110,40 @@ async function storeInbound(
     }
   }
 
+  /* Attachments: blobs as separate R2 objects, manifest in the body JSON -
+   * the same layout the send worker uses for outbound mail. Email Routing
+   * caps messages at 25MB, so no extra size policing here. */
+  const attachments: {
+    key: string;
+    filename: string;
+    type: string;
+    size: number;
+    disposition: string;
+    content_id: string | null;
+  }[] = [];
+  for (const [i, att] of (parsed.attachments ?? []).entries()) {
+    if (i >= 20) break; // manifest stays bounded; 20 parts is already absurd
+    const key = `inbox/${id}/att/${i}`;
+    const content = typeof att.content === 'string' ? new TextEncoder().encode(att.content) : att.content;
+    try {
+      await env.BODIES.put(key, content, {
+        httpMetadata: { contentType: att.mimeType || 'application/octet-stream' },
+      });
+      attachments.push({
+        key,
+        filename: att.filename || `attachment-${i + 1}`,
+        type: att.mimeType || 'application/octet-stream',
+        size: content.byteLength,
+        disposition: att.disposition === 'inline' ? 'inline' : 'attachment',
+        content_id: att.contentId?.replace(/^<|>$/g, '') ?? null,
+      });
+    } catch (err) {
+      console.error(`attachment ${i} store failed:`, err);
+    }
+  }
+
   const bodyKey = `inbox/${id}.json`;
-  await env.BODIES.put(bodyKey, JSON.stringify({ html, text }));
+  await env.BODIES.put(bodyKey, JSON.stringify({ html, text, attachments }));
 
   await env.DB.prepare(
     `INSERT INTO inbox_messages (id, address_id, domain_id, from_email, from_name, to_email,

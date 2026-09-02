@@ -1,9 +1,10 @@
-import { useEffect, useState, type FormEvent, type ReactElement } from 'react';
+import { useEffect, useMemo, useState, type FormEvent, type ReactElement } from 'react';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, MailOpen, Trash2 } from 'lucide-react';
+import { ExternalLink, MailOpen, Paperclip, Trash2 } from 'lucide-react';
 import { api, fmtTime } from '@/lib/api';
 import { EmailBody } from '@/lib/email-view';
+import { ReceivingChecks } from '@/lib/receiving';
 import { Button, ConfirmDialog, Dropdown, ErrorNote, Field, Input, Modal } from '@/lib/ui';
 import type { InboxAddressRow } from './__root';
 
@@ -35,9 +36,18 @@ interface MessageRow {
   created_at: number;
 }
 
+interface InboxAttachment {
+  filename: string;
+  type: string;
+  size: number;
+  disposition: string;
+  content_id: string | null;
+}
+
 interface MessageDetail extends MessageRow {
   html: string | null;
   text: string | null;
+  attachments: InboxAttachment[];
   parent: {
     id: string;
     subject: string;
@@ -216,6 +226,11 @@ function InboxPage(): ReactElement {
 
 /* ── thread view ─────────────────────────────────────────────────── */
 
+const fmtSize = (bytes: number): string =>
+  bytes >= 1_048_576
+    ? `${(bytes / 1_048_576).toFixed(1)} MB`
+    : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+
 function Thread({ d }: { d: MessageDetail }): ReactElement {
   const qc = useQueryClient();
   const [replyText, setReplyText] = useState('');
@@ -229,6 +244,18 @@ function Thread({ d }: { d: MessageDetail }): ReactElement {
   const suppress = useMutation({
     mutationFn: () => api.post('/api/suppressions', { address: d.from_email, reason: 'manual' }),
   });
+
+  /* Inline (cid:) images render in place; the rest get download cards. */
+  const { cidMap, files } = useMemo(() => {
+    const map: Record<string, string> = {};
+    const rest: { a: InboxAttachment; idx: number }[] = [];
+    (d.attachments ?? []).forEach((a, idx) => {
+      const url = `/api/inbox/messages/${d.id}/attachments/${idx}`;
+      if (a.disposition === 'inline' && a.content_id) map[a.content_id] = url;
+      else rest.push({ a, idx });
+    });
+    return { cidMap: map, files: rest };
+  }, [d.id, d.attachments]);
 
   return (
     <article className="mx-auto max-w-3xl">
@@ -283,8 +310,27 @@ function Thread({ d }: { d: MessageDetail }): ReactElement {
 
       {/* message body, inline in the page like any well-behaved document */}
       <div className="py-6">
-        <EmailBody html={d.html} text={d.text} />
+        <EmailBody html={d.html} text={d.text} cidMap={cidMap} />
       </div>
+
+      {files.length > 0 && (
+        <div className="mb-4 grid gap-2 sm:grid-cols-2">
+          {files.map(({ a, idx }) => (
+            <a
+              key={idx}
+              href={`/api/inbox/messages/${d.id}/attachments/${idx}`}
+              download={a.filename}
+              className="flex items-center gap-2.5 rounded-xl border border-line-soft bg-paper/60 px-3.5 py-2.5 text-xs transition hover:border-accent/40"
+            >
+              <Paperclip className="h-3.5 w-3.5 shrink-0 text-ink-soft" />
+              <span className="min-w-0 flex-1 truncate font-semibold text-accent-deep">
+                {a.filename}
+              </span>
+              <span className="shrink-0 font-mono text-[10px] text-ink-soft">{fmtSize(a.size)}</span>
+            </a>
+          ))}
+        </div>
+      )}
 
       {d.our_replies.length > 0 && (
         <div className="space-y-1.5 border-t border-line-soft pt-3">
@@ -341,44 +387,8 @@ function Thread({ d }: { d: MessageDetail }): ReactElement {
 
 /* ── first-run setup ─────────────────────────────────────────────── */
 
-interface ReceivingStatus {
-  domain: string;
-  dns: { mx: boolean; dkim: boolean };
-  probe: { status: 'none' | 'pending' | 'verified'; sent_at?: number; received_at?: number };
-}
-
-/** A pending probe should land in seconds; after this it reads as a miss. */
-const PROBE_WAIT_MS = 120_000;
-
-function CheckRow({
-  ok,
-  label,
-  detail,
-}: {
-  ok: boolean | null;
-  label: string;
-  detail?: string;
-}): ReactElement {
-  return (
-    <div className="flex items-center gap-2.5 py-1.5 text-[12.5px] text-ink">
-      <span
-        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold ${
-          ok === null ? 'bg-paper text-ink-soft' : ok ? 'bg-ok-soft text-ok' : 'bg-warn-soft text-warn'
-        }`}
-      >
-        {ok === null ? '·' : ok ? '✓' : '!'}
-      </span>
-      {label}
-      <span className="ml-auto font-mono text-[10.5px] text-ink-soft">
-        {detail ?? (ok === null ? 'checking…' : ok ? 'found' : 'not found yet')}
-      </span>
-    </div>
-  );
-}
-
 function SetupCard(): ReactElement {
   const navigate = useNavigate({ from: '/inbox' });
-  const qc = useQueryClient();
   const domains = useQuery({
     queryKey: ['domains'],
     queryFn: () => api.get<{ id: string; name: string; status: string }[]>('/api/domains'),
@@ -386,41 +396,6 @@ function SetupCard(): ReactElement {
   const active = domains.data?.filter(d => d.status === 'active') ?? [];
   const [domainId, setDomainId] = useState('');
   const chosen = domainId || active[0]?.id || '';
-
-  const receiving = useQuery({
-    queryKey: ['receiving', chosen],
-    queryFn: () => api.get<ReceivingStatus>(`/api/inbox/receiving/${chosen}`),
-    enabled: Boolean(chosen),
-    /* Poll while a probe is out: quickly during the normal delivery window,
-     * then keep listening slowly - a probe that lands after the user fixes
-     * the catch-all should still flip the card to verified. */
-    refetchInterval: q => {
-      const p = q.state.data?.probe;
-      if (p?.status !== 'pending') return false;
-      return Date.now() - (p.sent_at ?? 0) < PROBE_WAIT_MS ? 4000 : 15_000;
-    },
-    // Users tab away to Cloudflare to fix the catch-all mid-probe; the
-    // verified stamp should be waiting when they come back.
-    refetchIntervalInBackground: true,
-  });
-  const probe = useMutation({
-    mutationFn: () => api.post(`/api/inbox/receiving/${chosen}/probe`),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['receiving', chosen] }),
-  });
-
-  const r = receiving.data;
-  const p = r?.probe;
-  const waiting = p?.status === 'pending' && Date.now() - (p.sent_at ?? 0) < PROBE_WAIT_MS;
-  const probeOk: boolean | null =
-    p?.status === 'verified' ? true : p?.status === 'pending' && !waiting ? false : null;
-  const probeDetail =
-    p?.status === 'verified'
-      ? `verified ${fmtTime(p.received_at)}`
-      : waiting
-        ? 'probe in flight…'
-        : p?.status === 'pending'
-          ? 'probe not received'
-          : 'not verified yet';
 
   return (
     <div className="mx-auto max-w-xl pt-10">
@@ -460,7 +435,7 @@ function SetupCard(): ReactElement {
               Receiving status
               {active.length === 1 && (
                 <span className="ml-1.5 font-mono text-[11px] font-normal text-ink-soft">
-                  {r?.domain ?? active[0].name}
+                  {active[0].name}
                 </span>
               )}
             </p>
@@ -473,32 +448,7 @@ function SetupCard(): ReactElement {
             )}
           </div>
           <div className="mt-1.5">
-            <CheckRow
-              ok={r ? r.dns.mx : null}
-              label="MX → Cloudflare (Email Routing enabled)"
-              detail={r ? (r.dns.mx ? 'found' : 'not found yet') : undefined}
-            />
-            <CheckRow ok={probeOk} label="Catch-all delivers to the inbound worker" detail={probeDetail} />
-          </div>
-          <ErrorNote error={probe.error} />
-          <div className="mt-2 flex items-center justify-between gap-3">
-            <span className="text-[10.5px] leading-relaxed text-ink-soft">
-              The probe is one real email the instance sends itself - if it lands, the whole
-              MX → catch-all → worker path is proven.
-            </span>
-            <Button
-              variant="ghost"
-              onClick={() => probe.mutate()}
-              disabled={probe.isPending || waiting}
-            >
-              {waiting
-                ? 'Waiting for probe…'
-                : p?.status === 'verified'
-                  ? 'Re-verify'
-                  : p?.status === 'pending'
-                    ? 'Send probe again'
-                    : 'Send test probe'}
-            </Button>
+            <ReceivingChecks domainId={chosen} active />
           </div>
         </div>
       )}

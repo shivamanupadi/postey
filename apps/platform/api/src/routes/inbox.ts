@@ -10,6 +10,17 @@ import type { Bindings, Variables } from '../types';
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
+/** Attachment manifest entry inside an inbound body JSON (inbox/<id>.json);
+ *  blobs live at inbox/<id>/att/<n>, written by the inbound worker. */
+interface InboxAttachment {
+  key: string;
+  filename: string;
+  type: string;
+  size: number;
+  disposition: string;
+  content_id: string | null;
+}
+
 /* ── addresses ───────────────────────────────────────────────────── */
 
 app.get('/inbox/addresses', async c => {
@@ -68,13 +79,27 @@ app.post(
 
 app.delete('/inbox/addresses/:id', async c => {
   const id = c.req.param('id');
-  // Stored bodies go with the address - no orphaned R2 objects.
+  // Stored bodies AND their attachment blobs go with the address - no
+  // orphaned R2 objects. The manifest in each body names its blobs.
   const keys = await c.env.DB.prepare(
     'SELECT body_r2_key FROM inbox_messages WHERE address_id = ? AND body_r2_key IS NOT NULL'
   )
     .bind(id)
     .all<{ body_r2_key: string }>();
-  await Promise.all(keys.results.map(k => c.env.BODIES.delete(k.body_r2_key).catch(() => undefined)));
+  await Promise.all(
+    keys.results.map(async k => {
+      try {
+        const obj = await c.env.BODIES.get(k.body_r2_key);
+        const manifest = obj
+          ? ((await obj.json()) as { attachments?: InboxAttachment[] }).attachments
+          : undefined;
+        await Promise.all((manifest ?? []).map(a => c.env.BODIES.delete(a.key).catch(() => undefined)));
+        await c.env.BODIES.delete(k.body_r2_key);
+      } catch {
+        /* a missing body must not block address removal */
+      }
+    })
+  );
   await c.env.DB.batch([
     c.env.DB.prepare('DELETE FROM inbox_messages WHERE address_id = ?').bind(id),
     c.env.DB.prepare('DELETE FROM inbox_addresses WHERE id = ?').bind(id),
@@ -226,8 +251,12 @@ app.get('/inbox/messages/:id', async c => {
 
   const body = row.body_r2_key ? await c.env.BODIES.get(row.body_r2_key) : null;
   const content = body
-    ? ((await body.json()) as { html: string | null; text: string | null })
-    : { html: null, text: null };
+    ? ((await body.json()) as {
+        html: string | null;
+        text: string | null;
+        attachments?: InboxAttachment[];
+      })
+    : { html: null, text: null, attachments: [] };
 
   /* Parent outbound send, for the thread view. */
   const parent = row.reply_to_message_id
@@ -253,7 +282,45 @@ app.get('/inbox/messages/:id', async c => {
   }
 
   return c.json({
-    data: { ...row, read_at: row.read_at ?? Date.now(), html: content.html, text: content.text, parent, our_replies: ourReplies.results },
+    data: {
+      ...row,
+      read_at: row.read_at ?? Date.now(),
+      html: content.html,
+      text: content.text,
+      attachments: (content.attachments ?? []).map(({ key: _key, ...meta }) => meta),
+      parent,
+      our_replies: ourReplies.results,
+    },
+  });
+});
+
+/** Stream one inbound attachment - index addresses the manifest in the body
+ *  JSON, same contract as the outbound /messages/:id/attachments/:idx. */
+app.get('/inbox/messages/:id/attachments/:idx', async c => {
+  const idx = Number(c.req.param('idx'));
+  if (!Number.isInteger(idx) || idx < 0 || idx > 19) return c.json({ error: 'Not found' }, 404);
+  const row = await c.env.DB.prepare('SELECT body_r2_key FROM inbox_messages WHERE id = ?')
+    .bind(c.req.param('id'))
+    .first<{ body_r2_key: string | null }>();
+  if (!row?.body_r2_key) return c.json({ error: 'Not found' }, 404);
+  const bodyObj = await c.env.BODIES.get(row.body_r2_key);
+  if (!bodyObj) return c.json({ error: 'Not found' }, 404);
+  const manifest = ((await bodyObj.json()) as { attachments?: InboxAttachment[] }).attachments?.[idx];
+  if (!manifest) return c.json({ error: 'Not found' }, 404);
+  const file = await c.env.BODIES.get(manifest.key);
+  if (!file) return c.json({ error: 'Not found' }, 404);
+  // Only images may render in place (cid: references); anything else - HTML,
+  // SVG, PDFs - downloads, so hostile mail can't render on this origin.
+  const inline = manifest.disposition === 'inline' && /^image\/(?!svg)/i.test(manifest.type);
+  return new Response(file.body, {
+    headers: {
+      'Content-Type': manifest.type || 'application/octet-stream',
+      'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename="${manifest.filename.replaceAll('"', '')}"`,
+      'Cache-Control': 'private, max-age=300',
+      // Hostile mail must never script against the dashboard origin.
+      'Content-Security-Policy': "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'",
+      'X-Content-Type-Options': 'nosniff',
+    },
   });
 });
 

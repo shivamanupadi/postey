@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Info } from 'lucide-react';
 import { api, fmtTime } from '@/lib/api';
+import { ReceivingChecks } from '@/lib/receiving';
 import {
   Badge,
   Button,
@@ -131,6 +132,10 @@ function DomainDrawer({ d, onClose }: { d: DomainRow; onClose: () => void }): Re
               Verify &amp; activate flips it on.
             </p>
           )}
+        </section>
+        <section>
+          <h3 className="mb-1.5 text-[12.5px] font-semibold text-ink">Receiving (Inbox)</h3>
+          <ReceivingChecks domainId={d.id} active={d.status === 'active'} />
         </section>
         <section>
           <h3 className="mb-2 text-[12.5px] font-semibold text-ink">Sending</h3>

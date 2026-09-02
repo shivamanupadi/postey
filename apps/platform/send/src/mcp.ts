@@ -141,7 +141,7 @@ const TOOLS: ToolDef[] = [
   {
     name: 'get_reply',
     description:
-      'Full content of one inbound mail (text + html), with sender, subject, and the outbound message id it replies to.',
+      'Full content of one inbound mail (text + html), with sender, subject, attachment metadata (filename, type, size), and the outbound message id it replies to.',
     inputSchema: {
       type: 'object',
       properties: { id: str('Inbound mail id (inb_…) from list_replies') },

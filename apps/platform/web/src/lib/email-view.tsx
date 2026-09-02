@@ -18,7 +18,9 @@ DOMPurify.addHook('afterSanitizeAttributes', node => {
   }
   if (node.tagName === 'IMG') {
     const src = node.getAttribute('src') ?? '';
-    if (!/^(https?:|data:image\/)/i.test(src)) {
+    // /api/inbox/ paths are our own attachment routes - cid: references are
+    // rewritten to them before sanitizing; every other scheme dies here.
+    if (!/^(https?:|data:image\/)/i.test(src) && !src.startsWith('/api/inbox/')) {
       node.remove();
       return;
     }
@@ -52,10 +54,21 @@ const QUOTE_SELECTOR = [
   'div.moz-cite-prefix',
 ].join(', ');
 
-function splitHtmlQuoted(html: string): { main: string; quoted: string | null } {
+function splitHtmlQuoted(html: string, cidMap?: Record<string, string>): { main: string; quoted: string | null } {
   const doc = new DOMParser().parseFromString(html, 'text/html');
+  // Inline images arrive as cid: references to MIME parts; point them at our
+  // attachment route (the sanitizer would otherwise drop them).
+  if (cidMap) {
+    for (const img of Array.from(doc.querySelectorAll('img'))) {
+      const src = img.getAttribute('src') ?? '';
+      if (!src.toLowerCase().startsWith('cid:')) continue;
+      const resolved = cidMap[src.slice(4).replace(/^<|>$/g, '')];
+      if (resolved) img.setAttribute('src', resolved);
+    }
+  }
   const hit = doc.body.querySelector(QUOTE_SELECTOR);
-  if (!hit) return { main: html, quoted: null };
+  if (!hit) return { main: doc.body.innerHTML, quoted: null };
+  const full = doc.body.innerHTML; // cid-rewritten, pre-split
   const container = doc.createElement('div');
   let node: Element | null = hit;
   while (node) {
@@ -65,7 +78,7 @@ function splitHtmlQuoted(html: string): { main: string; quoted: string | null } 
   }
   // A message that was nothing but history renders whole instead of empty.
   if (!doc.body.textContent?.trim() && !doc.body.querySelector('img')) {
-    return { main: html, quoted: null };
+    return { main: full, quoted: null };
   }
   return { main: doc.body.innerHTML, quoted: container.innerHTML };
 }
@@ -97,18 +110,27 @@ type Prepared =
   | { kind: 'text'; main: string; quoted: string | null }
   | { kind: 'empty' };
 
-function prepare(html: string | null, text: string | null): Prepared {
+function prepare(html: string | null, text: string | null, cidMap?: Record<string, string>): Prepared {
   if (html) {
-    const { main, quoted } = splitHtmlQuoted(html);
+    const { main, quoted } = splitHtmlQuoted(html, cidMap);
     return { kind: 'html', main: sanitize(main), quoted: quoted ? sanitize(quoted) : null };
   }
   if (text?.trim()) return { kind: 'text', ...splitTextQuoted(text) };
   return { kind: 'empty' };
 }
 
-export function EmailBody({ html, text }: { html: string | null; text: string | null }): ReactElement {
+export function EmailBody({
+  html,
+  text,
+  cidMap,
+}: {
+  html: string | null;
+  text: string | null;
+  /** contentId → same-origin attachment URL, for inline (cid:) images. */
+  cidMap?: Record<string, string>;
+}): ReactElement {
   const [showQuoted, setShowQuoted] = useState(false);
-  const body = useMemo(() => prepare(html, text), [html, text]);
+  const body = useMemo(() => prepare(html, text, cidMap), [html, text, cidMap]);
 
   if (body.kind === 'empty') {
     return <p className="text-[13px] italic text-ink-soft">(empty message)</p>;
