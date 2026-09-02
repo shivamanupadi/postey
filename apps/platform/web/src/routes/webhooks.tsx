@@ -227,6 +227,14 @@ function DrawerSection({ title, children }: { title: string; children: ReactNode
   );
 }
 
+interface TestResult {
+  ok: boolean;
+  event: string;
+  response_code: number | null;
+  duration_ms: number;
+  error?: string;
+}
+
 function WebhookDrawer({
   h,
   onClose,
@@ -242,7 +250,13 @@ function WebhookDrawer({
   onDelete: () => void;
   toggling: boolean;
 }): ReactElement {
+  const qc = useQueryClient();
   const deliveries = useDeliveries(h.id);
+  const test = useMutation({
+    mutationFn: () => api.post<TestResult>(`/api/webhooks/${h.id}/test`),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['wh-deliveries', h.id] }),
+  });
+  const t = test.data;
   return (
     <Drawer
       title={<span className="break-all font-mono text-[14px]">{h.url}</span>}
@@ -255,9 +269,12 @@ function WebhookDrawer({
       onClose={onClose}
     >
       <div className="space-y-5">
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="ghost" onClick={onEdit}>
             Edit
+          </Button>
+          <Button variant="ghost" onClick={() => test.mutate()} disabled={test.isPending}>
+            {test.isPending ? 'Sending…' : 'Send test'}
           </Button>
           <Button variant="ghost" onClick={onToggle} disabled={toggling}>
             {h.enabled ? 'Disable' : 'Enable'}
@@ -266,6 +283,17 @@ function WebhookDrawer({
             Delete
           </Button>
         </div>
+        {t && (
+          <p
+            className={`rounded-[10px] px-3.5 py-2.5 font-mono text-[11.5px] ${
+              t.ok ? 'bg-ok-soft text-ok' : 'bg-bad-soft text-bad'
+            }`}
+          >
+            {t.ok ? '✓' : '✗'} {t.event} · {t.response_code ?? (t.error ?? 'no response')} ·{' '}
+            {t.duration_ms}ms
+          </p>
+        )}
+        <ErrorNote error={test.error} />
         <DrawerSection title="Signing secret">
           <SecretRow secret={h.secret} />
           <p className="mt-2 text-[11px] leading-relaxed text-ink-soft">

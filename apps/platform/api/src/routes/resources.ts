@@ -2,7 +2,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
-import { newId, randomHex, sha256Hex, SUPPRESSION_REASONS } from '@postey/shared';
+import { EVENT_TYPES, newId, randomHex, sha256Hex, signWebhook, SUPPRESSION_REASONS, type WebhookEvent } from '@postey/shared';
 import { sendingDnsChecks, sendingDnsReady } from '../lib/dns';
 import type { Bindings, Variables } from '../types';
 
@@ -313,8 +313,11 @@ app.delete('/suppressions/:id', async c => {
 
 /* ── webhooks ────────────────────────────────────────────────────── */
 
+/* The old regex (no dot after "email.") rejected email.reply.received - the
+ * exact strings the dispatchers emit are the only valid subscriptions. */
+const VALID_WEBHOOK_EVENTS = new Set(['*', ...EVENT_TYPES.map(t => `email.${t}`)]);
 const webhookEvents = z
-  .array(z.string().regex(/^(\*|email\.[a-z_]+)$/))
+  .array(z.string().refine(e => VALID_WEBHOOK_EVENTS.has(e), 'Unknown event type'))
   .min(1)
   .max(20);
 
@@ -393,6 +396,89 @@ app.get('/webhooks/:id/deliveries', async c => {
     .bind(c.req.param('id'))
     .all();
   return c.json({ data: rows.results });
+});
+
+/** Sample payload for test deliveries - clearly fake ids, real shape, and a
+ *  detail line so receiving handlers can tell it apart from live traffic. */
+function sampleWebhookEvent(type: string): WebhookEvent {
+  const detail = 'Test delivery from the dashboard - not a real event';
+  const data =
+    type === 'email.reply.received'
+      ? {
+          reply_id: 'inb_test_0000000000000000',
+          message_id: 'msg_test_0000000000000000',
+          from: 'customer@example.com',
+          to: 'support@yourdomain.com',
+          subject: 'Re: Welcome aboard',
+          detail,
+        }
+      : {
+          message_id: 'msg_test_0000000000000000',
+          recipient: 'customer@example.com',
+          from: 'hello@yourdomain.com',
+          subject: 'Welcome aboard',
+          detail,
+        };
+  return { type: type as WebhookEvent['type'], created_at: new Date().toISOString(), data };
+}
+
+/* One signed delivery to the endpoint, exactly as the live dispatchers send
+ * it (Postey-Signature over the raw body + Postey-Event), but a single
+ * attempt with the requester watching - no retries. Recorded in the
+ * delivery log so the ticks and drawer history show it. */
+app.post('/webhooks/:id/test', async c => {
+  const hook = await c.env.DB.prepare('SELECT id, url, secret, events_json FROM webhooks WHERE id = ?')
+    .bind(c.req.param('id'))
+    .first<{ id: string; url: string; secret: string; events_json: string }>();
+  if (!hook) return c.json({ error: 'Not found' }, 404);
+
+  let events: string[] = [];
+  try {
+    events = JSON.parse(hook.events_json) as string[];
+  } catch {
+    /* fall through to the default event */
+  }
+  const eventType = events.find(e => e !== '*') ?? 'email.delivered';
+  const body = JSON.stringify(sampleWebhookEvent(eventType));
+
+  const started = Date.now();
+  let responseCode: number | null = null;
+  let ok = false;
+  let failure: string | null = null;
+  try {
+    const res = await fetch(hook.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Postey-Signature': await signWebhook(hook.secret, body),
+        'Postey-Event': eventType,
+      },
+      body,
+      signal: AbortSignal.timeout(10_000),
+    });
+    responseCode = res.status;
+    ok = res.ok;
+  } catch (err) {
+    failure = err instanceof Error ? err.message : 'request failed';
+  }
+  const duration = Date.now() - started;
+
+  await c.env.DB.prepare(
+    'INSERT INTO webhook_deliveries (id, webhook_id, event_id, event_type, status, attempts, response_code, last_attempt_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)'
+  )
+    .bind(newId('whd'), hook.id, newId('evt'), eventType, ok ? 'delivered' : 'failed', responseCode, Date.now())
+    .run()
+    .catch(() => undefined);
+
+  return c.json({
+    data: {
+      ok,
+      event: eventType,
+      response_code: responseCode,
+      duration_ms: duration,
+      ...(failure ? { error: failure.slice(0, 200) } : {}),
+    },
+  });
 });
 
 /* ── template test sends ─────────────────────────────────────────── */
