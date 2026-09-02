@@ -443,7 +443,80 @@ async function getReply(c: AppCtx): Promise<Response> {
       ...rest,
       text: content.text,
       html: content.html,
-      attachments: (content.attachments ?? []).map(({ key: _k, ...meta }) => meta),
+      attachments: (content.attachments ?? []).map(({ key: _k, ...meta }, index) => ({
+        index,
+        ...meta,
+      })),
+    },
+  });
+}
+
+const b64 = (buf: ArrayBuffer): string => {
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(bin);
+};
+
+/** Attachment content that could fit through the send pipeline can come back
+ *  out inline; anything larger streams raw. */
+const INLINE_ATTACHMENT_LIMIT = 4 * 1024 * 1024;
+
+/** One inbound attachment - raw bytes by default (curl/SDK consumers), or
+ *  ?format=base64 for a JSON envelope (what the MCP tool uses, since tool
+ *  results are text). Domain scoping matches getReply. */
+async function getReplyAttachment(c: AppCtx): Promise<Response> {
+  const key = c.get('apiKey');
+  const idx = Number(c.req.param('idx'));
+  if (!Number.isInteger(idx) || idx < 0 || idx > 19) return c.json({ error: 'Not found' }, 404);
+  const row = await c.env.DB.prepare(
+    'SELECT domain_id, body_r2_key FROM inbox_messages WHERE id = ?'
+  )
+    .bind(c.req.param('id'))
+    .first<{ domain_id: string; body_r2_key: string | null }>();
+  if (!row?.body_r2_key) return c.json({ error: 'Not found' }, 404);
+  if (key.domain_id && row.domain_id !== key.domain_id) return c.json({ error: 'Not found' }, 404);
+  const bodyObj = await c.env.BODIES.get(row.body_r2_key);
+  if (!bodyObj) return c.json({ error: 'Not found' }, 404);
+  const manifest = (
+    (await bodyObj.json()) as {
+      attachments?: { key: string; filename: string; type: string; size: number; disposition: string }[];
+    }
+  ).attachments?.[idx];
+  if (!manifest) return c.json({ error: 'Not found' }, 404);
+  const file = await c.env.BODIES.get(manifest.key);
+  if (!file) return c.json({ error: 'Not found' }, 404);
+
+  if (c.req.query('format') === 'base64') {
+    if (manifest.size > INLINE_ATTACHMENT_LIMIT) {
+      return c.json(
+        {
+          error: `Attachment is ${manifest.size} bytes - over the 4 MiB inline limit. Fetch it raw: GET /api/replies/${c.req.param('id')}/attachments/${idx}`,
+        },
+        413
+      );
+    }
+    const buf = await file.arrayBuffer();
+    return c.json({
+      data: {
+        index: idx,
+        filename: manifest.filename,
+        type: manifest.type,
+        size: buf.byteLength,
+        disposition: manifest.disposition,
+        content_base64: b64(buf),
+      },
+    });
+  }
+
+  return new Response(file.body, {
+    headers: {
+      'Content-Type': manifest.type || 'application/octet-stream',
+      'Content-Disposition': `attachment; filename="${manifest.filename.replaceAll('"', '')}"`,
+      'Cache-Control': 'private, max-age=300',
+      'X-Content-Type-Options': 'nosniff',
     },
   });
 }
@@ -577,6 +650,8 @@ app.get('/api/replies', listReplies);
 app.get('/replies', listReplies);
 app.get('/api/replies/:id', getReply);
 app.get('/replies/:id', getReply);
+app.get('/api/replies/:id/attachments/:idx', getReplyAttachment);
+app.get('/replies/:id/attachments/:idx', getReplyAttachment);
 app.post('/api/replies/:id/reply', replyToInbound);
 app.post('/replies/:id/reply', replyToInbound);
 

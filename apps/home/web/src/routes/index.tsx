@@ -43,7 +43,7 @@ const V1_FEATURES: { icon: ReactNode; title: string; body: string }[] = [
   {
     icon: <Webhook />,
     title: 'Webhooks',
-    body: 'Signed delivered / bounced / complained / failed events to your endpoints, with retries and a delivery log.',
+    body: 'Signed delivered / bounced / complained / failed / reply events to your endpoints, with retries, a delivery log, and one-click test deliveries to verify your handler.',
   },
   {
     icon: <Zap />,
@@ -62,8 +62,8 @@ const V1_FEATURES: { icon: ReactNode; title: string; body: string }[] = [
   },
   {
     icon: <Inbox />,
-    title: 'Inbox (beta): two-way email',
-    body: 'Replies land back in your dashboard, threaded to the send they answer - with a reply webhook and MCP tools so your agents can read the answers. Unsubscribes still auto-suppress.',
+    title: 'Inbox: two-way email',
+    body: 'Replies land in your dashboard threaded to the send they answer - rendered like a real mail client, attachments included. A reply webhook and MCP tools let agents read the answers, fetch the files, and reply back.',
   },
 ];
 
@@ -85,6 +85,10 @@ const FAQ: { q: string; a: string }[] = [
   {
     q: 'How many emails can I send per day?',
     a: 'Cloudflare applies a reputation-based daily cap that starts conservative and grows with clean sending. If you hit it, the API tells you immediately - a 429 with a Retry-After - so your app can back off or fall back. You can also ask Cloudflare for a higher limit.',
+  },
+  {
+    q: 'How does receiving (the Inbox) work?',
+    a: "Enable Email Routing on your zone and point the catch-all at Postey's inbound worker - a deliberate two-click step in Cloudflare that Postey never performs for you, because your mail routing is yours. The dashboard then verifies the whole path honestly: a DNS check confirms routing is enabled, and a self-probe (the instance emails itself) proves the catch-all really delivers to the worker.",
   },
   {
     q: 'Does any of my data leave my account?',
@@ -219,7 +223,7 @@ function Landing(): ReactElement {
               align="left"
               kicker="Resend-compatible API"
               title="Keep your SDK. Change one URL."
-              body="Postey speaks the same REST dialect your code already does. Point your existing client at your own domain and every send flows through Workers you control. Coding agents get their own send tools via the built-in MCP server."
+              body="Postey speaks the same REST dialect your code already does. Point your existing client at your own domain and every send flows through Workers you control. The built-in MCP server gives coding agents the whole loop: send, read the replies - attachments included - and answer them."
             />
             <div className="mt-7 flex flex-wrap gap-2.5">
               {['node', 'python', 'go', 'curl', 'rest', 'mcp'].map(s => (
@@ -325,12 +329,12 @@ function Landing(): ReactElement {
               {
                 name: 'api + web',
                 role: 'Dashboard',
-                body: 'Better Auth sessions, domains, keys, templates, logs, and webhook config - metadata in D1, bodies in R2.',
+                body: 'Single-operator sessions, domains, keys, templates, logs, the Inbox, and webhook config - metadata in D1, bodies and attachments in R2.',
               },
               {
                 name: 'inbound',
                 role: 'Email Routing handler',
-                body: 'Catches replies and unsubscribe mail via the email() handler; forwards, webhooks, or suppresses.',
+                body: 'Parses and stores incoming mail - bodies and attachments - threaded to the send it answers via References; unsubscribe mail auto-suppresses, everything else unknown bounces.',
               },
             ].map(w => (
               <div

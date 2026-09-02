@@ -19,11 +19,13 @@ control. Same install model as [Traks](https://github.com/shivamanupadi/traks).
 - **Resend-compatible API** — drop-in `/emails` endpoint that works with
   Resend's SDKs; switch providers by changing the base URL and key.
 - **Two-way email** — every sending domain can also receive. Replies are
-  parsed, stored, and threaded to the outbound send they answer, in the same
-  dashboard.
+  parsed, stored with their attachments, and threaded to the outbound send
+  they answer — rendered mail-client-clean (inline images included) in the
+  same dashboard.
 - **Agent-native** — a built-in MCP server gives coding agents their own
-  email tools: send, plus `list_replies` / `get_reply` / `reply_to` to close
-  the loop on conversations.
+  email tools: send, plus `list_replies` / `get_reply` /
+  `get_reply_attachment` / `reply_to` to close the loop on conversations,
+  files included.
 - **Honest delivery** — sends go inline through Cloudflare Email Service, so
   the API response is Cloudflare's real answer (200 sent; 429 with
   `Retry-After` when the reputation-gated cap hits). No queue pretending a
@@ -51,7 +53,7 @@ top:
 - Email log with rendered previews and per-recipient delivery status
 - Templates with test sends
 - Suppression list, auto-fed by bounces, complaints, and unsubscribe mail
-- Signed outbound webhooks for delivery events
+- Signed outbound webhooks for delivery events, with one-click test deliveries
 - MCP server for agents
 
 Deliberately **not** built: scheduling, queues, and quota modeling — the
@@ -64,11 +66,14 @@ through.
 One catch-all Email Routing rule per zone (a deliberate, human step — Postey
 never touches your mail routing itself) delivers to the inbound Worker.
 Addresses like `support@` become instant rows in Postey; unknown addresses
-keep bouncing. Replies are parsed (postal-mime), stored (D1 + R2), threaded
-to the outbound send they answer via `References`, and announced with an
-`email.reply.received` webhook. The dashboard threads the conversation and
-replies as the receiving address through the same send pipeline; agents do
-the same over MCP.
+keep bouncing. Replies are parsed (postal-mime), stored (D1 + R2, attachments
+included), threaded to the outbound send they answer via `References`, and
+announced with an `email.reply.received` webhook. The dashboard renders the
+conversation inline — sanitized HTML, `cid:` images resolved, quoted history
+collapsed — and replies as the receiving address through the same send
+pipeline; agents do the same over MCP. Setup is verified honestly: a DNS
+check confirms Email Routing is enabled, and a self-probe (the instance
+emails itself) proves the catch-all really delivers to the worker.
 
 ## Repository layout
 

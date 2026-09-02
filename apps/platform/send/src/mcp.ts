@@ -141,13 +141,30 @@ const TOOLS: ToolDef[] = [
   {
     name: 'get_reply',
     description:
-      'Full content of one inbound mail (text + html), with sender, subject, attachment metadata (filename, type, size), and the outbound message id it replies to.',
+      'Full content of one inbound mail (text + html), with sender, subject, attachment metadata (index, filename, type, size - fetch content with get_reply_attachment), and the outbound message id it replies to.',
     inputSchema: {
       type: 'object',
       properties: { id: str('Inbound mail id (inb_…) from list_replies') },
       required: ['id'],
     },
     request: a => ({ method: 'GET', path: `/api/replies/${a.id}` }),
+  },
+  {
+    name: 'get_reply_attachment',
+    description:
+      'Content of one attachment from an inbound mail, base64-encoded with filename/type/size. Indexes come from get_reply. Inline limit 4 MiB; larger files are fetchable raw via GET /api/replies/{id}/attachments/{index} with the same API key.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: str('Inbound mail id (inb_…) from list_replies'),
+        index: { type: 'number', description: '0-based attachment index from get_reply' },
+      },
+      required: ['id', 'index'],
+    },
+    request: a => ({
+      method: 'GET',
+      path: `/api/replies/${a.id}/attachments/${Number(a.index)}?format=base64`,
+    }),
   },
   {
     name: 'reply_to',
