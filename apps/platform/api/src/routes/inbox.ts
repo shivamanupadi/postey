@@ -210,25 +210,224 @@ app.post('/inbox/receiving/:domainId/probe', async c => {
 
 /* ── messages ────────────────────────────────────────────────────── */
 
+interface InboundListRow {
+  id: string;
+  address_id: string;
+  from_email: string;
+  from_name: string | null;
+  to_email: string;
+  subject: string;
+  snippet: string | null;
+  reply_to_message_id: string | null;
+  read_at: number | null;
+  created_at: number;
+}
+
 app.get('/inbox/messages', async c => {
   const addressId = c.req.query('address_id');
   const limit = Math.min(Number(c.req.query('limit') ?? 50), 100);
-  const rows = addressId
+  const inboundRows = addressId
     ? await c.env.DB.prepare(
         `SELECT m.id, m.address_id, m.from_email, m.from_name, m.to_email, m.subject, m.snippet,
                 m.reply_to_message_id, m.read_at, m.created_at
          FROM inbox_messages m WHERE m.address_id = ? ORDER BY m.created_at DESC LIMIT ?`
       )
         .bind(addressId, limit)
-        .all()
+        .all<InboundListRow>()
     : await c.env.DB.prepare(
         `SELECT m.id, m.address_id, m.from_email, m.from_name, m.to_email, m.subject, m.snippet,
                 m.reply_to_message_id, m.read_at, m.created_at
          FROM inbox_messages m ORDER BY m.created_at DESC LIMIT ?`
       )
         .bind(limit)
-        .all();
-  return c.json({ data: rows.results });
+        .all<InboundListRow>();
+
+  /* Threads STARTED from the Inbox (dashboard-composed: api_key_id NULL, not
+   * a reply) show as sent rows until the first answer arrives - after that
+   * the inbound row represents the conversation. */
+  const sentFilter = addressId ? 'AND a.id = ?' : '';
+  const sentRows = await c.env.DB.prepare(
+    `SELECT m.id, a.id AS address_id, m.from_email, m.to_json, m.subject, m.status, m.created_at
+     FROM messages m
+     JOIN domains d ON d.id = m.domain_id
+     JOIN inbox_addresses a ON a.domain_id = d.id AND m.from_email = a.local_part || '@' || d.name
+     WHERE m.api_key_id IS NULL AND m.in_reply_to_inbox_id IS NULL ${sentFilter}
+       AND NOT EXISTS (SELECT 1 FROM inbox_messages im WHERE im.reply_to_message_id = m.id)
+     ORDER BY m.created_at DESC LIMIT ?`
+  )
+    .bind(...(addressId ? [addressId, limit] : [limit]))
+    .all<{ id: string; address_id: string; from_email: string; to_json: string; subject: string; status: string; created_at: number }>();
+
+  const rows = [
+    ...inboundRows.results.map(r => ({ ...r, status: null as string | null, direction: 'inbound' as const })),
+    ...sentRows.results.map(r => ({
+      id: r.id,
+      address_id: r.address_id,
+      from_email: r.from_email,
+      from_name: null,
+      to_email: (JSON.parse(r.to_json || '[]') as string[])[0] ?? '',
+      subject: r.subject,
+      snippet: null,
+      reply_to_message_id: null,
+      read_at: r.created_at, // sent rows are never "unread"
+      created_at: r.created_at,
+      status: r.status,
+      direction: 'outbound' as const,
+    })),
+  ]
+    .sort((a, b) => Number(b.created_at) - Number(a.created_at))
+    .slice(0, limit);
+  return c.json({ data: rows });
+});
+
+/* ── conversations ───────────────────────────────────────────────────
+ * Dashboard flavor of the send worker's thread walker: any id in the
+ * chain (msg_ or inb_) expands to the whole exchange, chronological,
+ * bodies and attachments included. Reading marks inbound mail read. */
+
+app.get('/inbox/conversations/:id', async c => {
+  const seed = c.req.param('id');
+  const msgIds = new Set<string>();
+  const inbIds = new Set<string>();
+  if (seed.startsWith('inb')) inbIds.add(seed);
+  else msgIds.add(seed);
+
+  for (let round = 0; round < 10; round++) {
+    const before = msgIds.size + inbIds.size;
+    if (before > 50) break;
+    if (msgIds.size > 0) {
+      const marks = [...msgIds].map(() => '?').join(', ');
+      const kids = await c.env.DB.prepare(
+        `SELECT id FROM inbox_messages WHERE reply_to_message_id IN (${marks})`
+      ).bind(...msgIds).all<{ id: string }>();
+      for (const r of kids.results) inbIds.add(r.id);
+      const parents = await c.env.DB.prepare(
+        `SELECT in_reply_to_inbox_id AS link FROM messages WHERE id IN (${marks}) AND in_reply_to_inbox_id IS NOT NULL`
+      ).bind(...msgIds).all<{ link: string }>();
+      for (const r of parents.results) inbIds.add(r.link);
+    }
+    if (inbIds.size > 0) {
+      const marks = [...inbIds].map(() => '?').join(', ');
+      const kids = await c.env.DB.prepare(
+        `SELECT id FROM messages WHERE in_reply_to_inbox_id IN (${marks})`
+      ).bind(...inbIds).all<{ id: string }>();
+      for (const r of kids.results) msgIds.add(r.id);
+      const parents = await c.env.DB.prepare(
+        `SELECT reply_to_message_id AS link FROM inbox_messages WHERE id IN (${marks}) AND reply_to_message_id IS NOT NULL`
+      ).bind(...inbIds).all<{ link: string }>();
+      for (const r of parents.results) msgIds.add(r.link);
+    }
+    if (msgIds.size + inbIds.size === before) break;
+  }
+
+  const loadBody = async (
+    key: string | null
+  ): Promise<{ html: string | null; text: string | null; attachments?: InboxAttachment[] }> => {
+    if (!key) return { html: null, text: null };
+    const obj = await c.env.BODIES.get(key).catch(() => null);
+    if (!obj) return { html: null, text: null };
+    try {
+      return (await obj.json()) as {
+        html: string | null;
+        text: string | null;
+        attachments?: InboxAttachment[];
+      };
+    } catch {
+      return { html: null, text: null };
+    }
+  };
+
+  const outbound =
+    msgIds.size > 0
+      ? (
+          await c.env.DB.prepare(
+            `SELECT id, from_email, to_json, subject, status, body_r2_key, created_at, sent_at
+             FROM messages WHERE id IN (${[...msgIds].map(() => '?').join(', ')})`
+          ).bind(...msgIds).all<Record<string, unknown>>()
+        ).results
+      : [];
+  const inbound =
+    inbIds.size > 0
+      ? (
+          await c.env.DB.prepare(
+            `SELECT id, address_id, from_email, from_name, to_email, subject, body_r2_key, read_at, created_at
+             FROM inbox_messages WHERE id IN (${[...inbIds].map(() => '?').join(', ')})`
+          ).bind(...inbIds).all<Record<string, unknown>>()
+        ).results
+      : [];
+  if (outbound.length + inbound.length === 0) return c.json({ error: 'Not found' }, 404);
+
+  const entries = await Promise.all([
+    ...outbound.map(async r => {
+      const body = await loadBody(r.body_r2_key as string | null);
+      return {
+        kind: 'outbound' as const,
+        id: r.id as string,
+        from: r.from_email as string,
+        to: JSON.parse((r.to_json as string) ?? '[]') as string[],
+        subject: r.subject as string,
+        status: r.status as string,
+        text: body.text,
+        html: body.html,
+        attachments: (body.attachments ?? []).map(({ key: _k, ...meta }, index) => ({ index, ...meta })),
+        created_at: r.created_at as number,
+      };
+    }),
+    ...inbound.map(async r => {
+      const body = await loadBody(r.body_r2_key as string | null);
+      return {
+        kind: 'inbound' as const,
+        id: r.id as string,
+        from: r.from_email as string,
+        from_name: r.from_name as string | null,
+        to: [r.to_email as string],
+        subject: r.subject as string,
+        text: body.text,
+        html: body.html,
+        attachments: (body.attachments ?? []).map(({ key: _k, ...meta }, index) => ({ index, ...meta })),
+        read_at: r.read_at as number | null,
+        created_at: r.created_at as number,
+      };
+    }),
+  ]);
+  entries.sort((a, b) => Number(a.created_at) - Number(b.created_at));
+
+  /* Which inbox address is "our side", and who is the counterpart? */
+  const firstInbound = inbound[0];
+  const ourAddress = firstInbound
+    ? (firstInbound.to_email as string)
+    : ((outbound[0]?.from_email as string) ?? null);
+  const addressRow = ourAddress
+    ? await c.env.DB.prepare(
+        `SELECT a.id FROM inbox_addresses a JOIN domains d ON d.id = a.domain_id
+         WHERE a.local_part || '@' || d.name = ?`
+      ).bind(ourAddress).first<{ id: string }>()
+    : null;
+  const counterpart = firstInbound
+    ? (firstInbound.from_email as string)
+    : ((JSON.parse((outbound[0]?.to_json as string) ?? '[]') as string[])[0] ?? null);
+
+  const unread = inbound.filter(r => !r.read_at).map(r => r.id as string);
+  if (unread.length > 0) {
+    await c.env.DB.prepare(
+      `UPDATE inbox_messages SET read_at = ? WHERE id IN (${unread.map(() => '?').join(', ')}) AND read_at IS NULL`
+    )
+      .bind(Date.now(), ...unread)
+      .run()
+      .catch(() => undefined);
+  }
+
+  return c.json({
+    data: {
+      seed,
+      subject: entries[0]?.subject ?? '(no subject)',
+      our_address: ourAddress,
+      address_id: addressRow?.id ?? null,
+      counterpart,
+      had_unread: unread.length > 0,
+      messages: entries,
+    },
+  });
 });
 
 app.get('/inbox/messages/:id', async c => {
@@ -324,6 +523,198 @@ app.get('/inbox/messages/:id/attachments/:idx', async c => {
   });
 });
 
+/* ── outgoing attachments (compose + reply) ──────────────────────── */
+
+const attachmentsInput = z
+  .array(
+    z.object({
+      filename: z.string().min(1).max(255),
+      content: z.string().min(1), // base64
+      content_type: z.string().max(255).optional(),
+    })
+  )
+  .max(10)
+  .optional();
+
+interface DecodedFile {
+  filename: string;
+  type: string;
+  bytes: Uint8Array;
+}
+
+/** Base64 → bytes with the send-side 4 MiB total cap. */
+function decodeAttachments(
+  input: { filename: string; content: string; content_type?: string }[] | undefined
+): DecodedFile[] | { error: string } {
+  const files: DecodedFile[] = [];
+  let total = 0;
+  for (const att of input ?? []) {
+    let bytes: Uint8Array;
+    try {
+      bytes = Uint8Array.from(atob(att.content), ch => ch.charCodeAt(0));
+    } catch {
+      return { error: `${att.filename}: content is not valid base64` };
+    }
+    total += bytes.byteLength;
+    if (total > 4 * 1024 * 1024) return { error: 'Attachments exceed the 4 MiB total limit' };
+    files.push({ filename: att.filename, type: att.content_type || 'application/octet-stream', bytes });
+  }
+  return files;
+}
+
+/** Blobs beside the body, manifest inside it - the layout the email-log
+ *  attachment routes already serve. */
+async function storeAttachments(
+  bodies: R2Bucket,
+  messageId: string,
+  files: DecodedFile[]
+): Promise<InboxAttachment[]> {
+  const manifest: InboxAttachment[] = [];
+  for (const [i, f] of files.entries()) {
+    const key = `bodies/${messageId}/att/${i}`;
+    await bodies.put(key, f.bytes, { httpMetadata: { contentType: f.type } });
+    manifest.push({
+      key,
+      filename: f.filename,
+      type: f.type,
+      size: f.bytes.byteLength,
+      disposition: 'attachment',
+      content_id: null,
+    });
+  }
+  return manifest;
+}
+
+const emailAttachments = (files: DecodedFile[]): object =>
+  files.length
+    ? {
+        attachments: files.map(f => ({
+          content: f.bytes.buffer as ArrayBuffer,
+          filename: f.filename,
+          type: f.type,
+        })),
+      }
+    : {};
+
+/* ── compose ─────────────────────────────────────────────────────────
+ * A fresh send from an inbox address - no thread history. Delivers the
+ * same way replies do (inline through EMAIL, recorded in the outbound
+ * log); answers thread back into the Inbox automatically because the
+ * inbound worker matches References against provider_message_id. */
+
+app.post(
+  '/inbox/compose',
+  zValidator(
+    'json',
+    z.object({
+      address_id: z.string().min(1),
+      to: z.array(z.string().email()).min(1).max(10),
+      subject: z.string().min(1).max(998),
+      text: z.string().min(1).max(500_000),
+      attachments: attachmentsInput,
+    })
+  ),
+  async c => {
+    if (!c.env.EMAIL) {
+      return c.json({ error: 'This instance predates compose - run an update from postey.app.' }, 501);
+    }
+    const input = c.req.valid('json');
+    const address = await c.env.DB.prepare(
+      `SELECT a.local_part, d.id AS d_id, d.name AS domain_name, d.status AS domain_status
+       FROM inbox_addresses a JOIN domains d ON d.id = a.domain_id WHERE a.id = ?`
+    )
+      .bind(input.address_id)
+      .first<{ local_part: string; d_id: string; domain_name: string; domain_status: string }>();
+    if (!address) return c.json({ error: 'Address not found' }, 404);
+    if (address.domain_status !== 'active') {
+      return c.json({ error: `${address.domain_name} is not active - activate it to send` }, 409);
+    }
+
+    const recipients = [...new Set(input.to.map(t => t.toLowerCase()))];
+    const suppressed = await c.env.DB.prepare(
+      `SELECT address FROM suppressions WHERE address IN (${recipients.map(() => '?').join(', ')}) LIMIT 1`
+    )
+      .bind(...recipients)
+      .first<{ address: string }>();
+    if (suppressed) {
+      return c.json({ error: `${suppressed.address} is on the suppression list` }, 409);
+    }
+
+    const files = decodeAttachments(input.attachments);
+    if ('error' in files) return c.json({ error: files.error }, 422);
+
+    const fromEmail = `${address.local_part}@${address.domain_name}`;
+    const id = newId('msg');
+    const now = Date.now();
+    const bodyKey = `bodies/${id}.json`;
+    const escapeHtml = (s: string): string =>
+      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const html = `<div style="font-family:-apple-system,Segoe UI,sans-serif;font-size:14px;line-height:1.6;white-space:pre-wrap">${escapeHtml(input.text)}</div>`;
+
+    const manifest = await storeAttachments(c.env.BODIES, id, files);
+    await c.env.BODIES.put(
+      bodyKey,
+      JSON.stringify({ html, text: input.text, ...(manifest.length ? { attachments: manifest } : {}) })
+    );
+
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `INSERT INTO messages (id, domain_id, api_key_id, from_email, from_name, to_json, reply_to,
+           subject, body_r2_key, status, created_at)
+         VALUES (?, ?, NULL, ?, NULL, ?, ?, ?, ?, 'sending', ?)`
+      ).bind(id, address.d_id, fromEmail, JSON.stringify(recipients), fromEmail, input.subject, bodyKey, now),
+      ...recipients.map(r =>
+        c.env.DB.prepare(
+          "INSERT INTO message_recipients (message_id, address, kind, status, updated_at) VALUES (?, ?, 'to', 'queued', ?)"
+        ).bind(id, r, now)
+      ),
+      c.env.DB.prepare(
+        "INSERT INTO message_events (id, message_id, event, meta_json, created_at) VALUES (?, ?, 'queued', ?, ?)"
+      ).bind(newId('evt'), id, JSON.stringify({ composed_from: input.address_id }), now),
+    ]);
+
+    try {
+      const response = await c.env.EMAIL.send({
+        to: recipients,
+        from: fromEmail,
+        subject: input.subject,
+        html,
+        text: input.text,
+        ...emailAttachments(files),
+      });
+      const done = Date.now();
+      await c.env.DB.batch([
+        c.env.DB.prepare(
+          "UPDATE messages SET status = 'sent', provider_message_id = ?, sent_at = ?, completed_at = ? WHERE id = ?"
+        ).bind(response?.messageId ?? null, done, done, id),
+        c.env.DB.prepare(
+          "UPDATE message_recipients SET status = 'sent', updated_at = ? WHERE message_id = ?"
+        ).bind(done, id),
+        c.env.DB.prepare(
+          "INSERT INTO message_events (id, message_id, event, meta_json, created_at) VALUES (?, ?, 'sent', NULL, ?)"
+        ).bind(newId('evt'), id, done),
+        c.env.DB.prepare(
+          'INSERT INTO quota_usage (day, sent) VALUES (?, 1) ON CONFLICT(day) DO UPDATE SET sent = sent + 1'
+        ).bind(new Date().toISOString().slice(0, 10)),
+      ]);
+      return c.json({ data: { id } });
+    } catch (raw) {
+      const err = raw as Error & { code?: string };
+      const code = err.code ?? 'E_UNKNOWN';
+      const done = Date.now();
+      await c.env.DB.batch([
+        c.env.DB.prepare(
+          "UPDATE messages SET status = 'failed', error_code = ?, error_message = ?, completed_at = ? WHERE id = ?"
+        ).bind(code, (err.message ?? '').slice(0, 500), done, id),
+        c.env.DB.prepare(
+          "UPDATE message_recipients SET status = 'failed', error = ?, updated_at = ? WHERE message_id = ?"
+        ).bind(code, done, id),
+      ]);
+      return c.json({ error: `${code}: ${err.message ?? 'send failed'}` }, 502);
+    }
+  }
+);
+
 /* ── reply ───────────────────────────────────────────────────────── */
 
 app.post(
@@ -333,6 +724,7 @@ app.post(
     z.object({
       html: z.string().max(500_000).nullish(),
       text: z.string().max(500_000).nullish(),
+      attachments: attachmentsInput,
     })
   ),
   async c => {
@@ -388,7 +780,17 @@ app.post(
       (input.text
         ? `<div style="font-family:-apple-system,Segoe UI,sans-serif;font-size:14px;line-height:1.6;white-space:pre-wrap">${escapeHtml(input.text)}</div>`
         : null);
-    await c.env.BODIES.put(bodyKey, JSON.stringify({ html, text: input.text ?? null }));
+    const files = decodeAttachments(input.attachments);
+    if ('error' in files) return c.json({ error: files.error }, 422);
+    const manifest = await storeAttachments(c.env.BODIES, id, files);
+    await c.env.BODIES.put(
+      bodyKey,
+      JSON.stringify({
+        html,
+        text: input.text ?? null,
+        ...(manifest.length ? { attachments: manifest } : {}),
+      })
+    );
 
     await c.env.DB.batch([
       c.env.DB.prepare(
@@ -421,6 +823,7 @@ app.post(
         subject,
         ...(html ? { html } : {}),
         ...(input.text ? { text: input.text } : {}),
+        ...emailAttachments(files),
         ...(inbound.message_id_header
           ? {
               headers: {
