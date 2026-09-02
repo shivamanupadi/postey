@@ -209,7 +209,7 @@ function TemplatesPage(): ReactElement {
     queryKey: ['domains'],
     queryFn: () => api.get<{ id: string; name: string; status: string }[]>('/api/domains'),
   });
-  const scopable = domains.data?.filter(d => d.status !== 'archived') ?? [];
+  const scopable = domains.data?.filter(d => d.status === 'active') ?? [];
 
   const [editing, setEditing] = useState<TemplateRow | 'new' | null>(null);
   const [form, setForm] = useState(empty);

@@ -86,7 +86,7 @@ function SuppressionsPage(): ReactElement {
     queryKey: ['domains'],
     queryFn: () => api.get<{ id: string; name: string; status: string }[]>('/api/domains'),
   });
-  const scopable = domains.data?.filter(d => d.status !== 'archived') ?? [];
+  const scopable = domains.data?.filter(d => d.status === 'active') ?? [];
 
   const countFor = (key: string): number =>
     counts.data?.find(r => r.reason === key)?.n ?? 0;

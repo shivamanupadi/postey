@@ -341,8 +341,87 @@ function Thread({ d }: { d: MessageDetail }): ReactElement {
 
 /* ── first-run setup ─────────────────────────────────────────────── */
 
+interface ReceivingStatus {
+  domain: string;
+  dns: { mx: boolean; dkim: boolean };
+  probe: { status: 'none' | 'pending' | 'verified'; sent_at?: number; received_at?: number };
+}
+
+/** A pending probe should land in seconds; after this it reads as a miss. */
+const PROBE_WAIT_MS = 120_000;
+
+function CheckRow({
+  ok,
+  label,
+  detail,
+}: {
+  ok: boolean | null;
+  label: string;
+  detail?: string;
+}): ReactElement {
+  return (
+    <div className="flex items-center gap-2.5 py-1.5 text-[12.5px] text-ink">
+      <span
+        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold ${
+          ok === null ? 'bg-paper text-ink-soft' : ok ? 'bg-ok-soft text-ok' : 'bg-warn-soft text-warn'
+        }`}
+      >
+        {ok === null ? '·' : ok ? '✓' : '!'}
+      </span>
+      {label}
+      <span className="ml-auto font-mono text-[10.5px] text-ink-soft">
+        {detail ?? (ok === null ? 'checking…' : ok ? 'found' : 'not found yet')}
+      </span>
+    </div>
+  );
+}
+
 function SetupCard(): ReactElement {
   const navigate = useNavigate({ from: '/inbox' });
+  const qc = useQueryClient();
+  const domains = useQuery({
+    queryKey: ['domains'],
+    queryFn: () => api.get<{ id: string; name: string; status: string }[]>('/api/domains'),
+  });
+  const active = domains.data?.filter(d => d.status === 'active') ?? [];
+  const [domainId, setDomainId] = useState('');
+  const chosen = domainId || active[0]?.id || '';
+
+  const receiving = useQuery({
+    queryKey: ['receiving', chosen],
+    queryFn: () => api.get<ReceivingStatus>(`/api/inbox/receiving/${chosen}`),
+    enabled: Boolean(chosen),
+    /* Poll while a probe is out: quickly during the normal delivery window,
+     * then keep listening slowly - a probe that lands after the user fixes
+     * the catch-all should still flip the card to verified. */
+    refetchInterval: q => {
+      const p = q.state.data?.probe;
+      if (p?.status !== 'pending') return false;
+      return Date.now() - (p.sent_at ?? 0) < PROBE_WAIT_MS ? 4000 : 15_000;
+    },
+    // Users tab away to Cloudflare to fix the catch-all mid-probe; the
+    // verified stamp should be waiting when they come back.
+    refetchIntervalInBackground: true,
+  });
+  const probe = useMutation({
+    mutationFn: () => api.post(`/api/inbox/receiving/${chosen}/probe`),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['receiving', chosen] }),
+  });
+
+  const r = receiving.data;
+  const p = r?.probe;
+  const waiting = p?.status === 'pending' && Date.now() - (p.sent_at ?? 0) < PROBE_WAIT_MS;
+  const probeOk: boolean | null =
+    p?.status === 'verified' ? true : p?.status === 'pending' && !waiting ? false : null;
+  const probeDetail =
+    p?.status === 'verified'
+      ? `verified ${fmtTime(p.received_at)}`
+      : waiting
+        ? 'probe in flight…'
+        : p?.status === 'pending'
+          ? 'probe not received'
+          : 'not verified yet';
+
   return (
     <div className="mx-auto max-w-xl pt-10">
       <h2 className="text-[17px] font-semibold text-ink">Turn on receiving</h2>
@@ -373,6 +452,57 @@ function SetupCard(): ReactElement {
           never becomes a spam trap.
         </li>
       </ol>
+
+      {chosen && (
+        <div className="mt-6 rounded-2xl border border-line-soft bg-card px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[12.5px] font-semibold text-ink">
+              Receiving status
+              {active.length === 1 && (
+                <span className="ml-1.5 font-mono text-[11px] font-normal text-ink-soft">
+                  {r?.domain ?? active[0].name}
+                </span>
+              )}
+            </p>
+            {active.length > 1 && (
+              <Dropdown
+                value={chosen}
+                onChange={setDomainId}
+                options={active.map(d => ({ value: d.id, label: d.name }))}
+              />
+            )}
+          </div>
+          <div className="mt-1.5">
+            <CheckRow
+              ok={r ? r.dns.mx : null}
+              label="MX → Cloudflare (Email Routing enabled)"
+              detail={r ? (r.dns.mx ? 'found' : 'not found yet') : undefined}
+            />
+            <CheckRow ok={probeOk} label="Catch-all delivers to the inbound worker" detail={probeDetail} />
+          </div>
+          <ErrorNote error={probe.error} />
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <span className="text-[10.5px] leading-relaxed text-ink-soft">
+              The probe is one real email the instance sends itself - if it lands, the whole
+              MX → catch-all → worker path is proven.
+            </span>
+            <Button
+              variant="ghost"
+              onClick={() => probe.mutate()}
+              disabled={probe.isPending || waiting}
+            >
+              {waiting
+                ? 'Waiting for probe…'
+                : p?.status === 'verified'
+                  ? 'Re-verify'
+                  : p?.status === 'pending'
+                    ? 'Send probe again'
+                    : 'Send test probe'}
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="mt-6">
         <Button onClick={() => void navigate({ search: prev => ({ ...prev, new: true }) })}>
           Create your first address

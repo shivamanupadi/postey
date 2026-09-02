@@ -55,3 +55,24 @@ export async function sendingDnsReady(domain: string): Promise<boolean> {
   const { spf, dkim } = await sendingDnsChecks(domain);
   return spf || dkim;
 }
+
+export interface RoutingDnsChecks {
+  mx: boolean;
+  dkim: boolean;
+}
+
+/**
+ * Email Routing onboarding detection, same credential-free trick as sending:
+ * enabling routing puts route1/2/3.mx.cloudflare.net MX records on the domain
+ * itself plus a cf2024-1 DKIM key. Content-matched, so wildcards can't fake
+ * it. This only proves routing is ENABLED - whether the catch-all actually
+ * points at our inbound worker is invisible in DNS and is verified by the
+ * self-probe instead (see routes/inbox.ts).
+ */
+export async function routingDnsChecks(domain: string): Promise<RoutingDnsChecks> {
+  const [mx, dkim] = await Promise.all([
+    hasRecord(domain, 'MX', d => d.toLowerCase().includes('mx.cloudflare.net')),
+    hasRecord(`cf2024-1._domainkey.${domain}`, 'TXT', d => d.toLowerCase().includes('v=dkim1')),
+  ]);
+  return { mx, dkim };
+}

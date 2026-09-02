@@ -237,7 +237,7 @@ function McpPage(): ReactElement {
       ? `${selected.key_prefix}…  ⟵ paste the full key`
       : '<YOUR_API_KEY>';
   const cfg = buildConfig(client, mcpUrl, snippetKey);
-  const scopable = domains.data?.filter(d => d.status !== 'archived');
+  const scopable = domains.data?.filter(d => d.status === 'active');
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">

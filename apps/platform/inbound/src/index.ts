@@ -25,6 +25,16 @@ export default {
     const from = message.from.toLowerCase();
     const [localPart, toDomain] = [to.split('@')[0], to.split('@')[1]];
 
+    /* Receiving-verification probes (dashboard "Verify receiving") loop a
+     * nonce through the real MX → routing → catch-all → worker path. Record
+     * the receipt and drop the mail - probes are infrastructure, not inbox.
+     * Never rejected: a bounce would tell outsiders the probe scheme exists,
+     * and a mismatched nonce (stale or guessed) simply proves nothing. */
+    if (localPart.startsWith('postey-probe')) {
+      await recordProbeReceipt(env, toDomain, localPart.replace(/^postey-probe\+?/, ''));
+      return;
+    }
+
     if (localPart === 'unsubscribe' || localPart.startsWith('unsubscribe+')) {
       await env.DB.prepare(
         'INSERT INTO suppressions (id, domain_id, address, reason, created_at) VALUES (?, NULL, ?, ?, ?) ON CONFLICT DO NOTHING'
@@ -134,6 +144,30 @@ async function storeInbound(
 }
 
 const stripTags = (html: string): string => html.replace(/<[^>]+>/g, ' ');
+
+/** Mark the pending receiving probe for this domain as delivered - but only
+ *  when the nonce matches what the api worker wrote to settings, so stray or
+ *  guessed probe mail can't stamp a domain verified. */
+async function recordProbeReceipt(env: Bindings, domainName: string, nonce: string): Promise<void> {
+  if (!nonce) return;
+  try {
+    const row = await env.DB.prepare(
+      `SELECT s.key, s.value FROM settings s
+       JOIN domains d ON s.key = 'receiving_probe:' || d.id
+       WHERE d.name = ?`
+    )
+      .bind(domainName)
+      .first<{ key: string; value: string }>();
+    if (!row) return;
+    const state = JSON.parse(row.value) as { nonce?: string; received_at?: number | null };
+    if (state.nonce !== nonce || state.received_at) return;
+    await env.DB.prepare('UPDATE settings SET value = ? WHERE key = ?')
+      .bind(JSON.stringify({ ...state, received_at: Date.now() }), row.key)
+      .run();
+  } catch (err) {
+    console.error('probe receipt failed:', err);
+  }
+}
 
 /** Signed email.reply.received webhooks - same contract as the send worker's
  *  dispatcher (Postey-Signature HMAC of the raw body). */

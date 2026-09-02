@@ -4,7 +4,8 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
-import { newId } from '@postey/shared';
+import { newId, randomHex } from '@postey/shared';
+import { routingDnsChecks } from '../lib/dns';
 import type { Bindings, Variables } from '../types';
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
@@ -39,8 +40,14 @@ app.post(
       .bind(domain_id)
       .first<{ id: string; name: string; status: string }>();
     if (!domain) return c.json({ error: 'Domain not found' }, 404);
+    if (domain.status !== 'active') {
+      return c.json({ error: `${domain.name} is not active - verify & activate it first` }, 409);
+    }
     if (local_part.toLowerCase().startsWith('unsubscribe')) {
       return c.json({ error: 'unsubscribe@ is reserved for the suppression handler' }, 409);
+    }
+    if (local_part.toLowerCase().startsWith('postey-probe')) {
+      return c.json({ error: 'postey-probe@ is reserved for receiving verification' }, 409);
     }
     const id = newId('adr');
     try {
@@ -73,6 +80,107 @@ app.delete('/inbox/addresses/:id', async c => {
     c.env.DB.prepare('DELETE FROM inbox_addresses WHERE id = ?').bind(id),
   ]);
   return c.json({ data: { ok: true } });
+});
+
+/* ── receiving verification ──────────────────────────────────────────
+ * "Is this domain actually routing mail to the inbound worker?" answered
+ * with the same credential-free philosophy as sending onboarding:
+ *  - DNS (DoH): Email Routing onboarding puts route*.mx.cloudflare.net MX
+ *    records on the domain - proves routing is enabled, nothing more.
+ *  - Self-probe: the instance emails postey-probe+<nonce>@domain; the
+ *    inbound worker records the nonce when the catch-all delivers it,
+ *    proving the whole MX → Email Routing → catch-all → worker → D1 path.
+ * Probe state lives in the settings kv table, shared with the inbound
+ * worker; a verified stamp persists until a new probe replaces it. */
+
+const probeKey = (domainId: string): string => `receiving_probe:${domainId}`;
+
+interface ProbeState {
+  nonce: string;
+  sent_at: number;
+  received_at: number | null;
+}
+
+interface ProbeView {
+  status: 'none' | 'pending' | 'verified';
+  sent_at?: number;
+  received_at?: number;
+}
+
+async function readProbe(c: { env: Bindings }, domainId: string): Promise<ProbeView> {
+  const row = await c.env.DB.prepare('SELECT value FROM settings WHERE key = ?')
+    .bind(probeKey(domainId))
+    .first<{ value: string }>();
+  if (!row) return { status: 'none' };
+  try {
+    const state = JSON.parse(row.value) as ProbeState;
+    return state.received_at
+      ? { status: 'verified', sent_at: state.sent_at, received_at: state.received_at }
+      : { status: 'pending', sent_at: state.sent_at };
+  } catch {
+    return { status: 'none' };
+  }
+}
+
+app.get('/inbox/receiving/:domainId', async c => {
+  const domain = await c.env.DB.prepare('SELECT id, name, status FROM domains WHERE id = ?')
+    .bind(c.req.param('domainId'))
+    .first<{ id: string; name: string; status: string }>();
+  if (!domain) return c.json({ error: 'Domain not found' }, 404);
+  const [dns, probe] = await Promise.all([routingDnsChecks(domain.name), readProbe(c, domain.id)]);
+  return c.json({ data: { domain: domain.name, dns, probe } });
+});
+
+app.post('/inbox/receiving/:domainId/probe', async c => {
+  if (!c.env.EMAIL) {
+    return c.json({ error: 'This instance predates probes - run an update from postey.app.' }, 501);
+  }
+  const domain = await c.env.DB.prepare('SELECT id, name, status FROM domains WHERE id = ?')
+    .bind(c.req.param('domainId'))
+    .first<{ id: string; name: string; status: string }>();
+  if (!domain) return c.json({ error: 'Domain not found' }, 404);
+  if (domain.status !== 'active') {
+    return c.json({ error: `${domain.name} is not active - the probe is a real send from it` }, 409);
+  }
+
+  /* Write the nonce BEFORE sending so the inbound worker can never win the
+   * race; restore the previous state (e.g. an old verified stamp) if the
+   * send itself is refused. */
+  const prev = await c.env.DB.prepare('SELECT value FROM settings WHERE key = ?')
+    .bind(probeKey(domain.id))
+    .first<{ value: string }>();
+  const state: ProbeState = { nonce: randomHex(8), sent_at: Date.now(), received_at: null };
+  await c.env.DB.prepare(
+    'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+  )
+    .bind(probeKey(domain.id), JSON.stringify(state))
+    .run();
+
+  try {
+    await c.env.EMAIL.send({
+      to: [`postey-probe+${state.nonce}@${domain.name}`],
+      from: `postey-probe@${domain.name}`,
+      subject: `Postey receiving probe ${state.nonce}`,
+      text: 'Automated probe verifying that Email Routing delivers this domain\'s mail to the Postey inbound worker. It is consumed by the worker and never stored as mail.',
+    });
+  } catch (raw) {
+    const err = raw as Error & { code?: string };
+    if (prev) {
+      await c.env.DB.prepare('UPDATE settings SET value = ? WHERE key = ?')
+        .bind(prev.value, probeKey(domain.id))
+        .run();
+    } else {
+      await c.env.DB.prepare('DELETE FROM settings WHERE key = ?').bind(probeKey(domain.id)).run();
+    }
+    return c.json({ error: `Probe send failed - ${err.code ?? 'E_UNKNOWN'}: ${err.message ?? ''}` }, 502);
+  }
+
+  await c.env.DB.prepare(
+    'INSERT INTO quota_usage (day, sent) VALUES (?, 1) ON CONFLICT(day) DO UPDATE SET sent = sent + 1'
+  )
+    .bind(new Date().toISOString().slice(0, 10))
+    .run();
+  return c.json({ data: { status: 'pending', sent_at: state.sent_at } });
 });
 
 /* ── messages ────────────────────────────────────────────────────── */

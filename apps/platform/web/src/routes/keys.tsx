@@ -168,7 +168,7 @@ function KeysPage(): ReactElement {
     queryKey: ['domains'],
     queryFn: () => api.get<{ id: string; name: string; status: string }[]>('/api/domains'),
   });
-  const scopable = domains.data?.filter(d => d.status !== 'archived');
+  const scopable = domains.data?.filter(d => d.status === 'active');
   const [name, setName] = useState('');
   const [domainId, setDomainId] = useState('');
   const [creating, setCreating] = useState(false);
