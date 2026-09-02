@@ -22,11 +22,11 @@ export function SiteChrome({ children }: { children: ReactNode }): ReactElement 
             <Wordmark />
           </Link>
           <nav className="ml-5 hidden items-center gap-1 text-[15px] font-medium text-ink-soft md:flex">
-            <a href="/#features" className="rounded-full px-3 py-1.5 transition hover:bg-paper hover:text-ink">
-              Features
+            <a href="/#send" className="rounded-full px-3 py-1.5 transition hover:bg-paper hover:text-ink">
+              Send
             </a>
-            <a href="/#architecture" className="rounded-full px-3 py-1.5 transition hover:bg-paper hover:text-ink">
-              Architecture
+            <a href="/#inbox" className="rounded-full px-3 py-1.5 transition hover:bg-paper hover:text-ink">
+              Inbox
             </a>
             <a href="/#pricing" className="rounded-full px-3 py-1.5 transition hover:bg-paper hover:text-ink">
               Pricing
@@ -64,7 +64,7 @@ export function SiteChrome({ children }: { children: ReactNode }): ReactElement 
               <p className="font-semibold text-ink">Product</p>
               <ul className="mt-3 space-y-2 text-ink-soft">
                 <li>
-                  <a href="/#features" className="hover:text-ink">
+                  <a href="/#layer" className="hover:text-ink">
                     Features
                   </a>
                 </li>

@@ -1,76 +1,43 @@
 import type { ReactElement, ReactNode } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { SiteChrome } from '../site/chrome';
-import {
-  Inbox,
-  KeyRound,
-  LayoutTemplate,
-  Plug,
-  RefreshCw,
-  ScrollText,
-  ShieldOff,
-  Webhook,
-  Zap,
-} from 'lucide-react';
 
 export const Route = createFileRoute('/')({
   component: Landing,
 });
 
+/* The landing page is a story told in numbered chapters - one idea per band,
+ * in reading order: send → honest delivery → receive → agents → the rest of
+ * the product layer → install → pricing. Grids repeating the story were
+ * deliberately removed; the architecture detail lives on /docs. */
+
 /* ---------------------------------- data --------------------------------- */
 
-const V1_FEATURES: { icon: ReactNode; title: string; body: string }[] = [
+const PRODUCT_LAYER: { title: string; body: string }[] = [
   {
-    icon: <Plug />,
-    title: 'Resend-compatible API',
-    body: 'Drop-in migration: change the base URL and the API key. Same payload shape for send, attachments, tags, and idempotency.',
-  },
-  {
-    icon: <ScrollText />,
     title: 'Email log & previews',
-    body: 'Every send recorded with per-recipient status, full headers, and the rendered HTML - searchable from the dashboard.',
+    body: 'Every send with per-recipient status and the rendered HTML.',
   },
   {
-    icon: <LayoutTemplate />,
     title: 'Templates',
-    body: 'Versioned templates with declared variables, validated at send time. Send by template slug instead of shipping HTML in every request.',
+    body: 'Versioned, with declared variables and test sends.',
   },
   {
-    icon: <ShieldOff />,
     title: 'Suppression list',
-    body: 'Hard bounces and complaints auto-populate the list; suppressed sends are blocked at the API boundary and never billed.',
+    body: 'Bounces and complaints auto-populate it; blocked sends are never billed.',
   },
   {
-    icon: <Webhook />,
     title: 'Webhooks',
-    body: 'Signed delivered / bounced / complained / failed / reply events to your endpoints, with retries, a delivery log, and one-click test deliveries to verify your handler.',
+    body: 'Signed events with retries, a delivery log, and one-click test deliveries.',
   },
   {
-    icon: <Zap />,
-    title: 'Instant, honest responses',
-    body: "Delivery happens in the request: the API returns Cloudflare's real answer - sent, or a clear 429/4xx with a Retry-After. No silent queue holding your mail.",
-  },
-  {
-    icon: <RefreshCw />,
-    title: 'Idempotent sends & retries',
-    body: 'Idempotency keys guarantee an email is sent exactly once - and a retry after a rate limit re-attempts the same message instead of replaying the failure.',
-  },
-  {
-    icon: <KeyRound />,
     title: 'Scoped API keys',
-    body: 'Per-domain or account-wide keys, hashed at rest, with prefixes for display, last-used tracking, and one-click revocation.',
+    body: 'Per-domain or account-wide, hashed at rest, revoked in one click.',
   },
   {
-    icon: <Inbox />,
-    title: 'Inbox: two-way email',
-    body: 'Replies land in your dashboard threaded to the send they answer - rendered like a real mail client, attachments included. A reply webhook and MCP tools let agents read the answers, fetch the files, and reply back.',
+    title: 'Verified receiving',
+    body: 'A DNS check plus a self-probe prove mail actually reaches your worker.',
   },
-];
-
-const PRICING_ROWS: { volume: string; postey: string; resend: string; postmark: string }[] = [
-  { volume: '10,000 / mo', postey: '~$7', resend: '$20', postmark: '$16.50' },
-  { volume: '50,000 / mo', postey: '~$21', resend: '$20', postmark: '~$60' },
-  { volume: '100,000 / mo', postey: '~$39', resend: '$40', postmark: '~$100' },
 ];
 
 const FAQ: { q: string; a: string }[] = [
@@ -104,12 +71,14 @@ const FAQ: { q: string; a: string }[] = [
 
 function SectionTitle({
   kicker,
+  chapter,
   title,
   body,
   light = false,
   align = 'center',
 }: {
   kicker: string;
+  chapter?: string;
   title: string;
   body?: string;
   light?: boolean;
@@ -117,7 +86,12 @@ function SectionTitle({
 }): ReactElement {
   return (
     <div className={align === 'center' ? 'mx-auto max-w-2xl text-center' : 'max-w-2xl'}>
-      <p className={`text-[15px] font-medium ${light ? 'text-[#ff8fa3]' : 'text-accent'}`}>
+      <p
+        className={`font-mono text-[14px] font-semibold ${light ? 'text-[#ff8fa3]' : 'text-accent'}`}
+      >
+        {chapter ? (
+          <span className={light ? 'text-cream/45' : 'text-ink-soft'}>{chapter} · </span>
+        ) : null}
         {kicker}
       </p>
       <h2
@@ -136,36 +110,50 @@ function SectionTitle({
   );
 }
 
-function CodeBlock(): ReactElement {
+function Chips({ items, light = false }: { items: string[]; light?: boolean }): ReactElement {
   return (
-    <div className="overflow-hidden rounded-2xl bg-ink-deep shadow-[0_24px_48px_-20px_rgba(30,25,18,0.35)]">
+    <div className="mt-7 flex flex-wrap gap-2.5">
+      {items.map(s => (
+        <span
+          key={s}
+          className={`rounded-lg border px-2.5 py-1 font-mono text-xs ${
+            light
+              ? 'border-cream/20 bg-cream/5 text-cream/60'
+              : 'border-line bg-white/60 text-ink-soft'
+          }`}
+        >
+          {s}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function Terminal({
+  caption,
+  children,
+  framed = false,
+}: {
+  caption: string;
+  children: ReactNode;
+  framed?: boolean;
+}): ReactElement {
+  return (
+    <div
+      className={`overflow-hidden rounded-2xl bg-ink-deep ${
+        framed
+          ? 'border border-cream/15'
+          : 'shadow-[0_24px_48px_-20px_rgba(30,25,18,0.35)]'
+      }`}
+    >
       <div className="flex items-center gap-1.5 border-b border-white/10 px-4 py-3">
         <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
         <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
         <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
-        <span className="ml-3 font-mono text-xs text-cream/50">
-          already on Resend? just change two lines
-        </span>
+        <span className="ml-3 font-mono text-xs text-cream/50">{caption}</span>
       </div>
       <pre className="overflow-x-auto p-5 font-mono text-[13px] leading-relaxed text-cream/90">
-        <code>
-          {`curl `}
-          <span className="text-[#ff8fa3]">https://mail.yourdomain.com</span>
-          {`/api/emails \\
-  -H "Authorization: Bearer `}
-          <span className="text-[#ff8fa3]">pk_live_…</span>
-          {`" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "from": "Acme <hello@yourdomain.com>",
-    "to": ["customer@example.com"],
-    "subject": "Your receipt",
-    "html": "<h1>Thanks!</h1>"
-  }'
-
-`}
-          <span className="text-cream/50">{`→ 200 { "id": "msg_8fk2…" }  · delivered inline, no queue`}</span>
-        </code>
+        <code>{children}</code>
       </pre>
     </div>
   );
@@ -177,7 +165,7 @@ function Landing(): ReactElement {
   return (
     <SiteChrome>
       <main>
-      {/* Hero - centered, openseo-style */}
+      {/* Hero */}
       <section className="px-5 pb-24 pt-20 text-center sm:pt-28">
         <div className="mx-auto max-w-4xl">
           <span className="inline-flex items-center gap-2 rounded-full border border-line bg-white/55 px-3.5 py-1.5 text-[13px] font-medium text-ink-soft">
@@ -204,10 +192,10 @@ function Landing(): ReactElement {
               </span>
             </a>
             <a
-              href="#features"
+              href="#send"
               className="rounded-[10px] border border-line bg-white px-7 py-3.5 text-[17px] font-medium text-ink transition hover:bg-paper-deep/40"
             >
-              Explore the features
+              Read the story
             </a>
           </div>
           <p className="mt-6 font-mono text-xs text-ink-soft">
@@ -216,94 +204,203 @@ function Landing(): ReactElement {
         </div>
       </section>
 
-      {/* API split band */}
-      <section className="border-y border-line-soft bg-paper-deep">
+      {/* 01 · Send */}
+      <section id="send" className="scroll-mt-20 border-y border-line-soft bg-paper-deep">
         <div className="mx-auto grid max-w-6xl items-center gap-12 px-5 py-24 lg:grid-cols-[5fr_6fr]">
           <div>
             <SectionTitle
               align="left"
-              kicker="Resend-compatible API"
-              title="Keep your SDK. Change one URL."
-              body="Postey speaks the same REST dialect your code already does. Point your existing client at your own domain and every send flows through Workers you control. The built-in MCP server gives coding agents the whole loop: send, read the replies - attachments included - and answer them."
+              chapter="01"
+              kicker="Send"
+              title="Transactional email, from your own domain."
+              body="Receipts, magic links, alerts - sent by Workers you control, on infrastructure you own. The API is Resend-compatible, so migrating is changing the base URL and the key; your SDK stays."
             />
-            <div className="mt-7 flex flex-wrap gap-2.5">
-              {['node', 'python', 'go', 'curl', 'rest', 'mcp'].map(s => (
-                <span
-                  key={s}
-                  className="rounded-lg border border-line bg-white/60 px-2.5 py-1 font-mono text-xs text-ink-soft"
-                >
-                  {s}
-                </span>
-              ))}
-            </div>
+            <Chips items={['node', 'python', 'go', 'curl', 'rest']} />
           </div>
-          <CodeBlock />
+          <Terminal caption="already on Resend? just change two lines">
+            {`curl `}
+            <span className="text-[#ff8fa3]">https://mail.yourdomain.com</span>
+            {`/api/emails \\
+  -H "Authorization: Bearer `}
+            <span className="text-[#ff8fa3]">pk_live_…</span>
+            {`" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "from": "Acme <hello@yourdomain.com>",
+    "to": ["customer@example.com"],
+    "subject": "Your receipt",
+    "html": "<h1>Thanks!</h1>"
+  }'
+
+`}
+            <span className="text-cream/50">{`→ 200 { "id": "msg_8fk2…" }  · delivered inline, no queue`}</span>
+          </Terminal>
         </div>
       </section>
 
-      {/* Inbox split band - the second product */}
-      <section id="inbox" className="py-24">
-        <div className="mx-auto grid max-w-6xl items-center gap-12 px-5 lg:grid-cols-[6fr_5fr]">
-          <div className="overflow-hidden rounded-2xl bg-ink-deep shadow-[0_24px_48px_-20px_rgba(30,25,18,0.35)]">
-            <div className="flex items-center gap-1.5 border-b border-white/10 px-4 py-3">
-              <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
-              <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
-              <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
-              <span className="ml-3 font-mono text-xs text-cream/50">
-                your agent, closing the loop over MCP
+      {/* 02 · Honest delivery */}
+      <section id="truth" className="scroll-mt-20 py-24">
+        <div className="mx-auto max-w-6xl px-5">
+          <SectionTitle
+            chapter="02"
+            kicker="Honest delivery"
+            title="The response is the truth."
+            body="Delivery happens inside the request - there is no queue pretending your mail went out. The API returns Cloudflare's real answer, and a retry under the same idempotency key re-attempts the same message, never a duplicate."
+          />
+          <div className="mx-auto mt-11 grid max-w-4xl gap-3.5 sm:grid-cols-3">
+            {[
+              {
+                code: '200 sent',
+                tone: 'text-[#1a7f4e]',
+                body: 'Email Service accepted it. The id is real, the message is on its way.',
+              },
+              {
+                code: '429 + Retry-After',
+                tone: 'text-[#9a6700]',
+                body: 'The reputation-gated daily cap hit. Back off and retry - same key, same message, sent once.',
+              },
+              {
+                code: '422 suppressed',
+                tone: 'text-[#b42318]',
+                body: 'The recipient bounced hard or complained before. Blocked at the boundary, never billed.',
+              },
+            ].map(r => (
+              <div
+                key={r.code}
+                className="rounded-2xl border border-line-soft bg-white p-5 shadow-[0_1px_2px_rgba(30,25,18,0.04)]"
+              >
+                <p className={`font-mono text-[15px] font-semibold ${r.tone}`}>{r.code}</p>
+                <p className="mt-2 text-sm leading-relaxed text-ink-soft">{r.body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* 03 · Receive */}
+      <section id="inbox" className="scroll-mt-20 border-y border-line-soft bg-paper-deep">
+        <div className="mx-auto grid max-w-6xl items-center gap-12 px-5 py-24 lg:grid-cols-[6fr_5fr]">
+          {/* thread mock */}
+          <div className="rounded-2xl border border-line-soft bg-white p-5 text-[13px] shadow-[0_24px_48px_-24px_rgba(30,25,18,0.25)]">
+            <div className="rounded-xl border border-line-soft px-3.5 py-3">
+              <div className="flex items-center justify-between font-mono text-[10.5px] text-ink-soft">
+                <span>
+                  <b className="font-semibold text-ink">billing@yourdomain.com</b> →
+                  jane@customer.io
+                </span>
+                <span className="rounded-full bg-[#e3f2e9] px-2 py-px font-bold text-[#1a7f4e]">
+                  delivered
+                </span>
+              </div>
+              <p className="mt-1.5 text-[13.5px] font-semibold text-ink">
+                Invoice INV-2026-0142 for September
+              </p>
+            </div>
+            <div className="ml-6 mt-2.5 rounded-xl border border-accent/30 px-3.5 py-3">
+              <div className="flex items-center justify-between font-mono text-[10.5px] text-ink-soft">
+                <span>
+                  <b className="font-semibold text-ink">Jane Cooper</b> → support@yourdomain.com
+                </span>
+                <span className="rounded-full bg-accent-soft px-2 py-px font-bold text-accent-deep">
+                  received
+                </span>
+              </div>
+              <p className="mt-1.5 text-[13.5px] font-semibold text-ink">
+                Re: Invoice INV-2026-0142 for September
+              </p>
+              <p className="mt-1.5 leading-relaxed text-ink-soft">
+                Payment went out this morning - can you switch our billing address to the Berlin
+                office?
+              </p>
+              <span className="mt-2.5 inline-flex items-center gap-2 rounded-[9px] border border-line-soft bg-paper px-2.5 py-1.5 text-xs font-semibold text-accent-deep">
+                📎 invoice-signed.pdf{' '}
+                <em className="font-mono text-[10.5px] font-normal not-italic text-ink-soft">
+                  84 KB
+                </em>
               </span>
             </div>
-            <pre className="overflow-x-auto p-5 font-mono text-[13px] leading-relaxed text-cream/90">
-              <code>
-                {`› list_replies `}
-                <span className="text-cream/50">{`{ unread: true }`}</span>
-                {`
-  ↳ Re: Your receipt · jane@customer.io · 1 attachment
-
-› get_reply_attachment `}
-                <span className="text-cream/50">{`{ id: "inb_8fk2…", index: 0 }`}</span>
-                {`
-  ↳ invoice-0142.pdf · application/pdf · 84 KB
-
-› reply_to `}
-                <span className="text-cream/50">{`{ id: "inb_8fk2…", text: "Got it - processing now." }`}</span>
-                {`
-  ↳ sent as `}
-                <span className="text-[#ff8fa3]">support@yourdomain.com</span>
-                {` · threaded to the original send`}
-              </code>
-            </pre>
           </div>
           <div>
             <SectionTitle
               align="left"
-              kicker="Inbox: the other direction"
+              chapter="03"
+              kicker="Receive"
               title="Replies come back. Threaded."
-              body="Point your zone's catch-all at the inbound worker (a deliberate two-click step - Postey never touches your routing) and support@ becomes real. Replies render mail-client-clean in the dashboard, attachments and all, threaded to the send they answer - and a signed reply webhook plus MCP tools hand the same conversation to your agents."
+              body="Point your zone's catch-all at the inbound worker - a deliberate two-click step; Postey never touches your routing - and support@ becomes real. Replies render mail-client-clean, attachments and all, threaded to the send they answer. A self-probe verifies the whole path actually works."
             />
-            <div className="mt-7 flex flex-wrap gap-2.5">
-              {['threading', 'attachments', 'reply webhook', 'agent replies', 'verified setup'].map(s => (
-                <span
-                  key={s}
-                  className="rounded-lg border border-line bg-white/60 px-2.5 py-1 font-mono text-xs text-ink-soft"
-                >
-                  {s}
-                </span>
-              ))}
-            </div>
+            <Chips items={['threading', 'attachments', 'reply webhook', 'verified setup']} />
           </div>
         </div>
       </section>
 
-      {/* Install steps */}
-      <section id="deploy" className="border-t border-line-soft py-24">
+      {/* 04 · Agents - the one dark band */}
+      <section id="agents" className="scroll-mt-20 bg-ink-deep">
+        <div className="mx-auto grid max-w-6xl items-center gap-12 px-5 py-24 lg:grid-cols-[5fr_6fr]">
+          <div>
+            <SectionTitle
+              light
+              align="left"
+              chapter="04"
+              kicker="Agents"
+              title="Your agents work the mailbox."
+              body="The built-in MCP server hands coding agents the whole loop with one Bearer key: send, read the replies, fetch the attachments, answer as the address that received the mail. Eleven tools, dispatching through the same routes your code uses."
+            />
+            <Chips
+              light
+              items={['send_email', 'list_replies', 'get_reply_attachment', 'reply_to', '+7 more']}
+            />
+          </div>
+          <Terminal framed caption="an agent closing the loop">
+            {`› list_replies `}
+            <span className="text-cream/50">{`{ unread: true }`}</span>
+            {`
+  ↳ Re: Your receipt · jane@customer.io · 1 attachment
+
+› get_reply_attachment `}
+            <span className="text-cream/50">{`{ id: "inb_8fk2…", index: 0 }`}</span>
+            {`
+  ↳ invoice-signed.pdf · application/pdf · 84 KB
+
+› reply_to `}
+            <span className="text-cream/50">{`{ id: "inb_8fk2…", text: "Got it - processing." }`}</span>
+            {`
+  ↳ sent as `}
+            <span className="text-[#ff8fa3]">support@yourdomain.com</span>
+            {` · threaded`}
+          </Terminal>
+        </div>
+      </section>
+
+      {/* 05 · Product layer */}
+      <section id="layer" className="scroll-mt-20 py-24">
         <div className="mx-auto max-w-6xl px-5">
           <SectionTitle
-            kicker="Install"
-            title="Yours in about five minutes"
-            body="The deploy wizard provisions everything into your account - the same model that powers Traks installs."
+            chapter="05"
+            kicker="The product layer"
+            title="Everything the raw API doesn't give you."
+            body="Cloudflare Email Service delivers the mail, signs DKIM, and manages IP reputation. Postey adds the layer you'd otherwise build yourself."
           />
-          <div className="mt-12 grid gap-5 md:grid-cols-3">
+          <div className="mx-auto mt-10 grid max-w-4xl gap-x-14 sm:grid-cols-2">
+            {PRODUCT_LAYER.map(f => (
+              <div key={f.title} className="flex gap-3.5 border-b border-line-soft px-1 py-4">
+                <span className="mt-0.5 flex h-[22px] w-[22px] flex-none items-center justify-center rounded-full bg-accent-soft text-xs font-bold text-accent-deep">
+                  ✓
+                </span>
+                <div>
+                  <p className="text-[14.5px] font-semibold text-ink">{f.title}</p>
+                  <p className="mt-0.5 text-[13.5px] leading-relaxed text-ink-soft">{f.body}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* 06 · Install */}
+      <section id="deploy" className="scroll-mt-20 border-y border-line-soft bg-paper-deep py-24">
+        <div className="mx-auto max-w-6xl px-5">
+          <SectionTitle chapter="06" kicker="Install" title="Yours in about five minutes." />
+          <div className="mx-auto mt-12 max-w-xl">
             {[
               {
                 n: '01',
@@ -313,140 +410,81 @@ function Landing(): ReactElement {
               {
                 n: '02',
                 title: 'Provision & onboard',
-                body: 'Workers, D1, and R2 deploy automatically. One deep-linked click onboards your domain to Email Sending - SPF, DKIM, and DMARC records are created and locked for you.',
+                body: 'Workers, D1, and R2 deploy automatically. One deep-linked click onboards your domain - SPF, DKIM, and DMARC records are created and locked for you.',
               },
               {
                 n: '03',
                 title: 'Send',
-                body: 'The wizard detects your DNS going live, verifies the deployment end to end, and hands you your dashboard. Create a key and point your app at your new instance.',
+                body: 'The wizard watches your DNS go live, verifies the deployment end to end, and hands you your dashboard.',
               },
-            ].map(s => (
-              <div
-                key={s.n}
-                className="rounded-2xl border border-line-soft bg-white p-6 shadow-[0_1px_2px_rgba(30,25,18,0.04)]"
-              >
-                <p className="font-mono text-sm font-medium text-accent">{s.n}</p>
-                <h3 className="mt-3 font-display text-xl font-semibold tracking-tight text-ink">
-                  {s.title}
-                </h3>
-                <p className="mt-2 text-sm leading-relaxed text-ink-soft">{s.body}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* v1 features */}
-      <section id="features" className="border-t border-line-soft bg-paper-deep py-24">
-        <div className="mx-auto max-w-6xl px-5">
-          <SectionTitle
-            kicker="Features"
-            title="Everything the raw API doesn't give you"
-            body="Cloudflare Email Service delivers the mail, signs DKIM, and manages IP reputation. Postey adds the product layer around it."
-          />
-          <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {V1_FEATURES.map(f => (
-              <div
-                key={f.title}
-                className="rounded-2xl border border-line-soft bg-white p-6 shadow-[0_1px_2px_rgba(30,25,18,0.04)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_24px_-12px_rgba(30,25,18,0.18)]"
-              >
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-soft text-accent [&_svg]:h-5 [&_svg]:w-5">
-                  {f.icon}
+            ].map((s, i, all) => (
+              <div key={s.n} className="relative grid grid-cols-[46px_1fr] gap-5 pb-9 last:pb-0">
+                {i < all.length - 1 && (
+                  <span className="absolute bottom-1 left-[22px] top-12 w-0.5 bg-line" />
+                )}
+                <span className="flex h-[46px] w-[46px] items-center justify-center rounded-full border border-line bg-white font-mono text-sm font-semibold text-accent">
+                  {s.n}
+                </span>
+                <div>
+                  <h3 className="pt-2 font-display text-lg font-semibold tracking-tight text-ink">
+                    {s.title}
+                  </h3>
+                  <p className="mt-1.5 max-w-[52ch] text-[14.5px] leading-relaxed text-ink-soft">
+                    {s.body}
+                  </p>
                 </div>
-                <h3 className="mt-4 text-base font-semibold text-ink">{f.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-ink-soft">{f.body}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Architecture */}
-      <section id="architecture" className="py-24">
-        <div className="mx-auto max-w-6xl px-5">
-          <SectionTitle
-            kicker="Architecture"
-            title="Three workers, zero servers"
-            body="Everything runs on Cloudflare primitives inside your account - the same hot/cold data design proven in Traks."
-          />
-          <div className="mt-12 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            {[
-              {
-                name: 'send',
-                role: 'Public API worker',
-                body: "Resend-compatible REST. Validates keys, checks suppressions, enforces idempotency, and delivers inline through Email Service - the response is Cloudflare's real answer.",
-              },
-              {
-                name: 'send · events',
-                role: 'Lifecycle consumer (same worker)',
-                body: 'Consumes Email Sending delivery events - upgrades sent into delivered, bounced, or complained, feeds the suppression list, and fires your webhooks.',
-              },
-              {
-                name: 'api + web',
-                role: 'Dashboard',
-                body: 'Single-operator sessions, domains, keys, templates, logs, the Inbox, and webhook config - metadata in D1, bodies and attachments in R2.',
-              },
-              {
-                name: 'inbound',
-                role: 'Email Routing handler',
-                body: 'Parses and stores incoming mail - bodies and attachments - threaded to the send it answers via References; unsubscribe mail auto-suppresses, everything else unknown bounces.',
-              },
-            ].map(w => (
-              <div
-                key={w.name}
-                className="rounded-2xl border border-line-soft bg-white p-6 shadow-[0_1px_2px_rgba(30,25,18,0.04)]"
-              >
-                <p className="font-mono text-sm font-semibold text-accent">{w.name}</p>
-                <p className="mt-1 text-xs font-medium uppercase tracking-wide text-ink-soft">
-                  {w.role}
-                </p>
-                <p className="mt-3 text-sm leading-relaxed text-ink-soft">{w.body}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Pricing */}
-      <section id="pricing" className="border-t border-line-soft bg-paper-deep py-24">
+      {/* 07 · Pricing */}
+      <section id="pricing" className="scroll-mt-20 py-24">
         <div className="mx-auto max-w-4xl px-5">
           <SectionTitle
+            chapter="07"
             kicker="Pricing"
-            title="Postey is software, not a middleman"
-            body="The platform is yours to run. You pay Cloudflare for usage - nothing to us per email or per seat."
+            title="You pay Cloudflare. That's it."
+            body="Postey is software you run, not a service you subscribe to. There is exactly one bill, and it isn't ours."
           />
-          <div className="mt-12 overflow-hidden rounded-2xl border border-line-soft bg-white shadow-[0_1px_2px_rgba(30,25,18,0.04)]">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-line-soft text-xs uppercase tracking-wide text-ink-soft">
-                <tr>
-                  <th className="px-5 py-4 font-semibold">Transactional volume</th>
-                  <th className="px-5 py-4 font-semibold text-accent">Postey (CF usage)</th>
-                  <th className="px-5 py-4 font-semibold">Resend</th>
-                  <th className="px-5 py-4 font-semibold">Postmark</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line-soft">
-                {PRICING_ROWS.map(r => (
-                  <tr key={r.volume}>
-                    <td className="px-5 py-4 font-medium text-ink">{r.volume}</td>
-                    <td className="px-5 py-4 font-mono font-semibold text-accent">{r.postey}</td>
-                    <td className="px-5 py-4 font-mono text-ink-soft">{r.resend}</td>
-                    <td className="px-5 py-4 font-mono text-ink-soft">{r.postmark}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="mt-11 grid gap-4 sm:grid-cols-2">
+            <div className="rounded-2xl border border-line-soft bg-white p-7 shadow-[0_1px_2px_rgba(30,25,18,0.04)]">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-soft">
+                Cloudflare's bill · the only one
+              </p>
+              <p className="mt-2.5 font-mono text-4xl font-semibold tracking-tight text-ink">
+                $5<span className="text-[15px] font-normal text-ink-soft">/mo</span>
+              </p>
+              <ul className="mt-4 space-y-2 text-[13.5px] leading-relaxed text-ink-soft">
+                <li>Workers Paid plan - runs the whole platform</li>
+                <li>3,000 emails a month included</li>
+                <li>then $0.35 per 1,000 emails</li>
+              </ul>
+            </div>
+            <div className="rounded-2xl border border-accent/35 bg-accent-soft p-7">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-soft">
+                Postey's bill
+              </p>
+              <p className="mt-2.5 font-mono text-4xl font-semibold tracking-tight text-accent-deep">
+                $0
+              </p>
+              <ul className="mt-4 space-y-2 text-[13.5px] leading-relaxed text-ink-soft">
+                <li>No markup per email</li>
+                <li>No seats, no tiers, no license fee</li>
+                <li>MIT-licensed software in your account - updates included</li>
+              </ul>
+            </div>
           </div>
           <p className="mt-4 text-center text-xs text-ink-soft">
-            Approximate published pricing, August 2026. Postey = $5/mo Workers Paid plan + $0.35 per
-            1,000 emails after the 3,000 included. The real difference isn't the bill - it's that
-            your logs, templates, and reputation are yours.
+            For scale: 100,000 emails/mo lands around $39 in Cloudflare usage - Resend charges
+            $40, Postmark ~$100 (published pricing, August 2026).
           </p>
         </div>
       </section>
 
       {/* FAQ */}
-      <section id="faq" className="py-24">
+      <section id="faq" className="border-t border-line-soft bg-paper-deep py-24">
         <div className="mx-auto max-w-3xl px-5">
           <SectionTitle kicker="FAQ" title="The honest fine print" />
           <div className="mt-10 space-y-3">
@@ -466,7 +504,7 @@ function Landing(): ReactElement {
       </section>
 
       {/* CTA */}
-      <section className="border-t border-line-soft bg-paper-deep py-24">
+      <section className="border-t border-line-soft py-24">
         <div className="mx-auto max-w-3xl px-5 text-center">
           <img src="/logo.svg" alt="" className="mx-auto h-14 w-14" />
           <h2 className="display mt-6 text-balance font-display text-4xl text-ink sm:text-[44px]">
