@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as DeployRouteImport } from './routes/deploy'
 import { Route as DestroyRouteImport } from './routes/destroy'
+import { Route as DocsRouteImport } from './routes/docs'
 import { Route as UpdateRouteImport } from './routes/update'
 
 const IndexRoute = IndexRouteImport.update({
@@ -35,6 +36,11 @@ const DestroyRoute = DestroyRouteImport.update({
   path: '/destroy',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DocsRoute = DocsRouteImport.update({
+  id: '/docs',
+  path: '/docs',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const UpdateRoute = UpdateRouteImport.update({
   id: '/update',
   path: '/update',
@@ -46,6 +52,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRoute
   '/deploy': typeof DeployRoute
   '/destroy': typeof DestroyRoute
+  '/docs': typeof DocsRoute
   '/update': typeof UpdateRoute
 }
 export interface FileRoutesByTo {
@@ -53,6 +60,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRoute
   '/deploy': typeof DeployRoute
   '/destroy': typeof DestroyRoute
+  '/docs': typeof DocsRoute
   '/update': typeof UpdateRoute
 }
 export interface FileRoutesById {
@@ -61,14 +69,15 @@ export interface FileRoutesById {
   '/admin': typeof AdminRoute
   '/deploy': typeof DeployRoute
   '/destroy': typeof DestroyRoute
+  '/docs': typeof DocsRoute
   '/update': typeof UpdateRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/admin' | '/deploy' | '/destroy' | '/update'
+  fullPaths: '/' | '/admin' | '/deploy' | '/destroy' | '/docs' | '/update'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin' | '/deploy' | '/destroy' | '/update'
-  id: '__root__' | '/' | '/admin' | '/deploy' | '/destroy' | '/update'
+  to: '/' | '/admin' | '/deploy' | '/destroy' | '/docs' | '/update'
+  id: '__root__' | '/' | '/admin' | '/deploy' | '/destroy' | '/docs' | '/update'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -76,6 +85,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRoute
   DeployRoute: typeof DeployRoute
   DestroyRoute: typeof DestroyRoute
+  DocsRoute: typeof DocsRoute
   UpdateRoute: typeof UpdateRoute
 }
 
@@ -109,6 +119,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DestroyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/docs': {
+      id: '/docs'
+      path: '/docs'
+      fullPath: '/docs'
+      preLoaderRoute: typeof DocsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/update': {
       id: '/update'
       path: '/update'
@@ -124,6 +141,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRoute,
   DeployRoute: DeployRoute,
   DestroyRoute: DestroyRoute,
+  DocsRoute: DocsRoute,
   UpdateRoute: UpdateRoute,
 }
 export const routeTree = rootRouteImport

@@ -31,9 +31,9 @@ export function SiteChrome({ children }: { children: ReactNode }): ReactElement 
             <a href="/#pricing" className="rounded-full px-3 py-1.5 transition hover:bg-paper hover:text-ink">
               Pricing
             </a>
-            <a href="/#faq" className="rounded-full px-3 py-1.5 transition hover:bg-paper hover:text-ink">
-              FAQ
-            </a>
+            <Link to="/docs" className="rounded-full px-3 py-1.5 transition hover:bg-paper hover:text-ink">
+              Docs
+            </Link>
           </nav>
           <div className="flex-1" />
           <Link
@@ -55,7 +55,8 @@ export function SiteChrome({ children }: { children: ReactNode }): ReactElement 
               <Wordmark />
             </div>
             <p className="mt-3 text-sm leading-relaxed text-ink-soft">
-              Self-hosted transactional email, installed into your own Cloudflare account.
+              Self-hosted email for apps and agents - send and receive from your own Cloudflare
+              account.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-10 text-sm sm:grid-cols-3">
@@ -88,10 +89,14 @@ export function SiteChrome({ children }: { children: ReactNode }): ReactElement 
                   </a>
                 </li>
                 <li>
-                  <span className="cursor-default opacity-60">Docs (soon)</span>
+                  <Link to="/docs" className="hover:text-ink">
+                    Docs
+                  </Link>
                 </li>
                 <li>
-                  <span className="cursor-default opacity-60">API reference (soon)</span>
+                  <a href="/docs#api" className="hover:text-ink">
+                    API reference
+                  </a>
                 </li>
               </ul>
             </div>

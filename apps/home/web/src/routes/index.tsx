@@ -23,7 +23,7 @@ const V1_FEATURES: { icon: ReactNode; title: string; body: string }[] = [
   {
     icon: <Plug />,
     title: 'Resend-compatible API',
-    body: 'Drop-in migration: change the base URL and the API key. Same payload shape for send, batch, attachments, and tags.',
+    body: 'Drop-in migration: change the base URL and the API key. Same payload shape for send, attachments, tags, and idempotency.',
   },
   {
     icon: <ScrollText />,
@@ -188,9 +188,10 @@ function Landing(): ReactElement {
             The email platform you actually own.
           </h1>
           <p className="mx-auto mt-7 max-w-xl text-lg leading-relaxed text-ink-soft">
-            Postey installs a complete transactional email platform - API, logs, templates,
-            suppressions, webhooks - into your own Cloudflare account. No middleman, no
-            per-email markup, no data leaving your infrastructure.
+            Postey installs two products into your own Cloudflare account: a
+            Resend-compatible transactional email API, and an Inbox that threads replies back
+            to the sends they answer - readable by you in the dashboard and by your agents
+            over MCP. No middleman, no per-email markup, no data leaving your infrastructure.
           </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
             <a
@@ -240,8 +241,62 @@ function Landing(): ReactElement {
         </div>
       </section>
 
+      {/* Inbox split band - the second product */}
+      <section id="inbox" className="py-24">
+        <div className="mx-auto grid max-w-6xl items-center gap-12 px-5 lg:grid-cols-[6fr_5fr]">
+          <div className="overflow-hidden rounded-2xl bg-ink-deep shadow-[0_24px_48px_-20px_rgba(30,25,18,0.35)]">
+            <div className="flex items-center gap-1.5 border-b border-white/10 px-4 py-3">
+              <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+              <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+              <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+              <span className="ml-3 font-mono text-xs text-cream/50">
+                your agent, closing the loop over MCP
+              </span>
+            </div>
+            <pre className="overflow-x-auto p-5 font-mono text-[13px] leading-relaxed text-cream/90">
+              <code>
+                {`› list_replies `}
+                <span className="text-cream/50">{`{ unread: true }`}</span>
+                {`
+  ↳ Re: Your receipt · jane@customer.io · 1 attachment
+
+› get_reply_attachment `}
+                <span className="text-cream/50">{`{ id: "inb_8fk2…", index: 0 }`}</span>
+                {`
+  ↳ invoice-0142.pdf · application/pdf · 84 KB
+
+› reply_to `}
+                <span className="text-cream/50">{`{ id: "inb_8fk2…", text: "Got it - processing now." }`}</span>
+                {`
+  ↳ sent as `}
+                <span className="text-[#ff8fa3]">support@yourdomain.com</span>
+                {` · threaded to the original send`}
+              </code>
+            </pre>
+          </div>
+          <div>
+            <SectionTitle
+              align="left"
+              kicker="Inbox: the other direction"
+              title="Replies come back. Threaded."
+              body="Point your zone's catch-all at the inbound worker (a deliberate two-click step - Postey never touches your routing) and support@ becomes real. Replies render mail-client-clean in the dashboard, attachments and all, threaded to the send they answer - and a signed reply webhook plus MCP tools hand the same conversation to your agents."
+            />
+            <div className="mt-7 flex flex-wrap gap-2.5">
+              {['threading', 'attachments', 'reply webhook', 'agent replies', 'verified setup'].map(s => (
+                <span
+                  key={s}
+                  className="rounded-lg border border-line bg-white/60 px-2.5 py-1 font-mono text-xs text-ink-soft"
+                >
+                  {s}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Install steps */}
-      <section id="deploy" className="py-24">
+      <section id="deploy" className="border-t border-line-soft py-24">
         <div className="mx-auto max-w-6xl px-5">
           <SectionTitle
             kicker="Install"
