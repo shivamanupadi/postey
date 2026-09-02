@@ -3,6 +3,7 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, MailOpen, Trash2 } from 'lucide-react';
 import { api, fmtTime } from '@/lib/api';
+import { EmailBody } from '@/lib/email-view';
 import { Button, ConfirmDialog, Dropdown, ErrorNote, Field, Input, Modal } from '@/lib/ui';
 import type { InboxAddressRow } from './__root';
 
@@ -134,7 +135,11 @@ function InboxPage(): ReactElement {
                   }`}
                 >
                   <div className="flex items-baseline justify-between gap-2">
-                    <p className="min-w-0 truncate text-[13px] font-semibold text-ink">
+                    <p
+                      className={`min-w-0 truncate text-[13px] text-ink ${
+                        unread ? 'font-bold' : 'font-medium'
+                      }`}
+                    >
                       {unread && (
                         <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-accent align-[2px]" />
                       )}
@@ -144,13 +149,16 @@ function InboxPage(): ReactElement {
                       {fmtTime(m.created_at)}
                     </span>
                   </div>
-                  <p className="mt-0.5 truncate text-[12px] text-ink">{m.subject}</p>
-                  <p className="mt-0.5 truncate font-mono text-[10px] text-ink-soft">
-                    → {m.to_email.split('@')[0]}@ ·{' '}
-                    {m.reply_to_message_id
-                      ? `replies to ${m.reply_to_message_id.slice(0, 12)}…`
-                      : 'new thread'}
+                  <p
+                    className={`mt-0.5 truncate text-[12.5px] text-ink ${
+                      unread ? 'font-semibold' : ''
+                    }`}
+                  >
+                    {m.subject}
                   </p>
+                  {m.snippet && (
+                    <p className="mt-0.5 truncate text-[11.5px] text-ink-soft">{m.snippet}</p>
+                  )}
                 </Link>
               );
             })
@@ -167,7 +175,7 @@ function InboxPage(): ReactElement {
       </div>
 
       {/* thread */}
-      <div className="min-w-0 flex-1 overflow-y-auto bg-paper px-6 py-5">
+      <div className="min-w-0 flex-1 overflow-y-auto bg-card px-8 py-6">
         {msg && detail.data ? (
           <Thread d={detail.data} />
         ) : addresses.data && addresses.data.length === 0 && !addresses.isLoading ? (
@@ -223,73 +231,69 @@ function Thread({ d }: { d: MessageDetail }): ReactElement {
   });
 
   return (
-    <div className="mx-auto max-w-2xl">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="min-w-0 text-[17px] font-semibold text-ink">{d.subject}</h2>
-        <div className="flex shrink-0 gap-2">
-          <Button variant="ghost" onClick={() => suppress.mutate()} disabled={suppress.isPending || suppress.isSuccess}>
-            {suppress.isSuccess ? 'Suppressed ✓' : 'Suppress sender'}
-          </Button>
-        </div>
+    <article className="mx-auto max-w-3xl">
+      {/* action bar */}
+      <div className="flex items-center justify-between gap-3">
+        <p className="min-w-0 truncate font-mono text-[11px] text-ink-soft">via {d.to_email}</p>
+        <Button
+          variant="ghost"
+          onClick={() => suppress.mutate()}
+          disabled={suppress.isPending || suppress.isSuccess}
+        >
+          {suppress.isSuccess ? 'Suppressed ✓' : 'Suppress sender'}
+        </Button>
       </div>
-      <p className="mt-1 font-mono text-[11px] text-ink-soft">
-        thread with {d.from_email} · via {d.to_email}
-      </p>
       <ErrorNote error={suppress.error} />
 
-      <div className="mt-5 space-y-3">
-        {d.parent && (
-          <div className="max-w-[540px] rounded-2xl border border-line-soft bg-card px-4 py-3">
-            <div className="flex items-center justify-between gap-3 text-[10.5px] text-ink-soft">
-              <span>
-                <b className="font-semibold text-ink">{d.parent.from_email}</b> →{' '}
-                {JSON.parse(d.parent.to_json).join(', ')}
-              </span>
-              <span className="flex shrink-0 items-center gap-2">
-                <span className="rounded-full bg-ok-soft px-2 py-px font-bold text-ok">
-                  {d.parent.status} · {fmtTime(d.parent.sent_at ?? d.parent.created_at)}
-                </span>
-                <Link
-                  to="/emails/$id"
-                  params={{ id: d.parent.id }}
-                  className="flex items-center gap-1 font-semibold text-accent-deep hover:underline"
-                >
-                  email log <ExternalLink className="h-3 w-3" />
-                </Link>
-              </span>
-            </div>
-            <p className="mt-2 text-[12.5px] text-ink">{d.parent.subject}</p>
-          </div>
-        )}
+      <h1 className="mt-2 text-[22px] font-semibold leading-snug text-ink">{d.subject}</h1>
 
-        <div className="ml-10 max-w-[540px] rounded-2xl border border-accent/25 bg-card px-4 py-3">
-          <div className="flex items-center justify-between gap-3 text-[10.5px] text-ink-soft">
-            <span>
-              <b className="font-semibold text-ink">{d.from_name || d.from_email}</b> →{' '}
-              {d.to_email}
-            </span>
-            <span className="rounded-full bg-accent-soft px-2 py-px font-bold text-accent-deep">
-              received · {fmtTime(d.created_at)}
-            </span>
-          </div>
-          {d.html ? (
-            <iframe
-              title="message"
-              sandbox=""
-              srcDoc={d.html}
-              className="mt-2 h-[320px] w-full rounded-lg border border-line-soft bg-white"
-            />
-          ) : (
-            <pre className="mt-2 whitespace-pre-wrap font-sans text-[12.5px] leading-relaxed text-ink">
-              {d.text ?? '(empty message)'}
-            </pre>
-          )}
+      {/* sender header */}
+      <div className="mt-4 flex items-start justify-between gap-4 border-b border-line-soft pb-4">
+        <div className="min-w-0">
+          <p className="text-[13.5px] text-ink">
+            <span className="font-semibold">{d.from_name || d.from_email}</span>{' '}
+            {d.from_name && <span className="text-ink-soft">&lt;{d.from_email}&gt;</span>}
+          </p>
+          <p className="mt-0.5 text-xs text-ink-soft">to {d.to_email}</p>
         </div>
+        <p className="shrink-0 pt-0.5 text-xs text-ink-soft">{fmtTime(d.created_at)}</p>
+      </div>
 
-        {d.our_replies.map(r => (
-          <div key={r.id} className="max-w-[540px] rounded-2xl border border-line-soft bg-card px-4 py-2.5">
-            <div className="flex items-center justify-between gap-3 text-[10.5px] text-ink-soft">
-              <span>
+      {/* the send this replies to, collapsed Gmail-style above the body */}
+      {d.parent && (
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-line-soft bg-paper/60 px-3.5 py-2 text-[11px] text-ink-soft">
+          <span className="min-w-0 truncate">
+            in reply to your send · <b className="font-semibold text-ink">{d.parent.subject}</b> →{' '}
+            {(JSON.parse(d.parent.to_json) as string[]).join(', ')}
+          </span>
+          <span className="flex shrink-0 items-center gap-2">
+            <span className="rounded-full bg-ok-soft px-2 py-px font-bold text-ok">
+              {d.parent.status} · {fmtTime(d.parent.sent_at ?? d.parent.created_at)}
+            </span>
+            <Link
+              to="/emails/$id"
+              params={{ id: d.parent.id }}
+              className="flex items-center gap-1 font-semibold text-accent-deep hover:underline"
+            >
+              email log <ExternalLink className="h-3 w-3" />
+            </Link>
+          </span>
+        </div>
+      )}
+
+      {/* message body, inline in the page like any well-behaved document */}
+      <div className="py-6">
+        <EmailBody html={d.html} text={d.text} />
+      </div>
+
+      {d.our_replies.length > 0 && (
+        <div className="space-y-1.5 border-t border-line-soft pt-3">
+          {d.our_replies.map(r => (
+            <div
+              key={r.id}
+              className="flex items-center justify-between gap-3 rounded-xl border border-line-soft bg-paper/60 px-3.5 py-2 text-[11px] text-ink-soft"
+            >
+              <span className="min-w-0 truncate">
                 you replied · <b className="font-semibold text-ink">{r.subject}</b>
               </span>
               <span className="flex shrink-0 items-center gap-2">
@@ -305,33 +309,33 @@ function Thread({ d }: { d: MessageDetail }): ReactElement {
                 </Link>
               </span>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
+      )}
 
-        {/* composer */}
-        <div className="ml-10 max-w-[540px] rounded-2xl border border-line bg-card px-4 py-3">
-          <p className="font-mono text-[10.5px] text-ink-soft">
-            replying as <b className="text-ink">{d.to_email}</b> · lands in the email log like any
-            send
-          </p>
-          <textarea
-            className="mt-2 min-h-[88px] w-full resize-y rounded-[10px] border border-line bg-paper px-3 py-2.5 text-[13px] leading-relaxed text-ink outline-none transition placeholder:text-ink-soft/45 focus:border-accent focus:ring-2 focus:ring-accent/15"
-            placeholder={`Reply to ${d.from_name || d.from_email}…`}
-            value={replyText}
-            onChange={e => setReplyText(e.target.value)}
-          />
-          <ErrorNote error={reply.error} />
-          <div className="mt-2 flex items-center justify-between">
-            <span className="text-[10.5px] text-ink-soft">
-              delivered by the send pipeline · plain text
-            </span>
-            <Button onClick={() => reply.mutate()} disabled={reply.isPending || !replyText.trim()}>
-              {reply.isPending ? 'Sending…' : 'Send reply'}
-            </Button>
-          </div>
+      {/* composer */}
+      <div className="mt-6 rounded-2xl border border-line bg-paper/60 px-4 py-3">
+        <p className="font-mono text-[10.5px] text-ink-soft">
+          replying as <b className="text-ink">{d.to_email}</b> · lands in the email log like any
+          send
+        </p>
+        <textarea
+          className="mt-2 min-h-[88px] w-full resize-y rounded-[10px] border border-line bg-card px-3 py-2.5 text-[13px] leading-relaxed text-ink outline-none transition placeholder:text-ink-soft/45 focus:border-accent focus:ring-2 focus:ring-accent/15"
+          placeholder={`Reply to ${d.from_name || d.from_email}…`}
+          value={replyText}
+          onChange={e => setReplyText(e.target.value)}
+        />
+        <ErrorNote error={reply.error} />
+        <div className="mt-2 flex items-center justify-between">
+          <span className="text-[10.5px] text-ink-soft">
+            delivered by the send pipeline · plain text
+          </span>
+          <Button onClick={() => reply.mutate()} disabled={reply.isPending || !replyText.trim()}>
+            {reply.isPending ? 'Sending…' : 'Send reply'}
+          </Button>
         </div>
       </div>
-    </div>
+    </article>
   );
 }
 
